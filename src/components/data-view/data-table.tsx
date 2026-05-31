@@ -2,8 +2,10 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type UIEvent as ReactUIEvent,
 } from "react";
 import {
   ChevronLeft,
@@ -39,6 +41,7 @@ import {
   COLUMN_MIN_WIDTH,
   formatCellValue,
   getTotalPages,
+  getVirtualRowWindow,
   normalizeCellValue,
   resolveFilterPanelSide,
   type FilterPanelSide,
@@ -46,6 +49,9 @@ import {
 import type { CellValue, PageSize, RowData } from "@/types/database";
 
 const SELECT_COLUMN_WIDTH = 42;
+const ROW_HEIGHT = 32;
+const ROW_OVERSCAN = 8;
+const LOAD_MORE_THRESHOLD_PX = 1200;
 
 type DeleteTarget =
   | { type: "row"; pkValue: CellValue }
@@ -82,7 +88,9 @@ export function DataTable() {
     setPage,
     setPageSize,
     refreshData,
+    loadMoreData,
     isLoading,
+    isLoadingMore,
   } = useDatabaseStore();
   const { toast } = useToast();
   const { t } = useI18n();
@@ -97,6 +105,11 @@ export function DataTable() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const [filterPanel, setFilterPanel] = useState<FilterPanelState | null>(null);
+  const [scrollMetrics, setScrollMetrics] = useState({
+    scrollTop: 0,
+    viewportHeight: 0,
+  });
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const pkColumn = tableColumns.find((column) => column.pk);
   const pkColumnIndex = pkColumn && queryResult
@@ -124,6 +137,16 @@ export function DataTable() {
   }, [selectedTable, currentPage, pageSize, orderBy, orderDir, filtersKey]);
 
   useEffect(() => {
+    const element = scrollContainerRef.current;
+    if (!element) return;
+
+    setScrollMetrics({
+      scrollTop: element.scrollTop,
+      viewportHeight: element.clientHeight,
+    });
+  }, [rows.length, selectedTable, pageSize]);
+
+  useEffect(() => {
     if (!contextMenu) return;
 
     const close = () => setContextMenu(null);
@@ -143,6 +166,15 @@ export function DataTable() {
       (total, column) => total + (columnWidths[column] ?? COLUMN_MIN_WIDTH),
       0
     );
+  const virtualWindow = getVirtualRowWindow({
+    rowCount: rows.length,
+    scrollTop: scrollMetrics.scrollTop,
+    viewportHeight: scrollMetrics.viewportHeight || ROW_HEIGHT * 20,
+    rowHeight: ROW_HEIGHT,
+    overscan: ROW_OVERSCAN,
+  });
+  const virtualRows = rows.slice(virtualWindow.start, virtualWindow.end);
+  const tableColSpan = columns.length + 1;
 
   const visibleSelectionKeys = useMemo(() => {
     if (!pkColumn || pkColumnIndex < 0) return [];
@@ -337,6 +369,25 @@ export function DataTable() {
     document.addEventListener("mouseup", handleUp);
   };
 
+  const handleTableScroll = (event: ReactUIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    setScrollMetrics({
+      scrollTop: element.scrollTop,
+      viewportHeight: element.clientHeight,
+    });
+
+    const remaining =
+      element.scrollHeight - element.scrollTop - element.clientHeight;
+    if (
+      pageSize === "all" &&
+      remaining < LOAD_MORE_THRESHOLD_PX &&
+      rows.length < (queryResult?.total_count ?? 0) &&
+      !isLoadingMore
+    ) {
+      void loadMoreData();
+    }
+  };
+
   if (!queryResult) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -385,7 +436,11 @@ export function DataTable() {
         )}
       </div>
 
-      <div className="sqlite-table-scroll flex-1 overflow-auto">
+      <div
+        ref={scrollContainerRef}
+        className="sqlite-table-scroll flex-1 overflow-auto"
+        onScroll={handleTableScroll}
+      >
         <table
           className="min-w-full table-fixed border-separate border-spacing-0 text-sm"
           style={{ minWidth: tableWidth }}
@@ -431,7 +486,17 @@ export function DataTable() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row, rowIndex) => {
+            {virtualWindow.topPadding > 0 && (
+              <tr aria-hidden="true">
+                <td
+                  colSpan={tableColSpan}
+                  className="border-0 p-0"
+                  style={{ height: virtualWindow.topPadding }}
+                />
+              </tr>
+            )}
+            {virtualRows.map((row, virtualIndex) => {
+              const rowIndex = virtualWindow.start + virtualIndex;
               const pkValue = getRowPkValue(rowIndex);
               const selected =
                 pkColumn && pkValue !== null
@@ -487,6 +552,15 @@ export function DataTable() {
                 </TableRow>
               );
             })}
+            {virtualWindow.bottomPadding > 0 && (
+              <tr aria-hidden="true">
+                <td
+                  colSpan={tableColSpan}
+                  className="border-0 p-0"
+                  style={{ height: virtualWindow.bottomPadding }}
+                />
+              </tr>
+            )}
           </TableBody>
         </table>
       </div>

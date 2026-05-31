@@ -10,6 +10,13 @@ import {
 
 initializeSettings();
 applyThemeClass(useSettingsStore.getState().resolvedTheme);
+document.addEventListener(
+  "contextmenu",
+  (event) => {
+    event.preventDefault();
+  },
+  { capture: true }
+);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

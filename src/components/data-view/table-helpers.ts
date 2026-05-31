@@ -42,6 +42,36 @@ export function uniqueCellValues(rows: unknown[][], columnIndex: number) {
   return values;
 }
 
+export function getVirtualRowWindow({
+  rowCount,
+  scrollTop,
+  viewportHeight,
+  rowHeight,
+  overscan,
+}: {
+  rowCount: number;
+  scrollTop: number;
+  viewportHeight: number;
+  rowHeight: number;
+  overscan: number;
+}) {
+  if (rowCount === 0) {
+    return { start: 0, end: 0, topPadding: 0, bottomPadding: 0 };
+  }
+
+  const visibleStart = Math.floor(scrollTop / rowHeight);
+  const visibleCount = Math.ceil(viewportHeight / rowHeight);
+  const start = Math.max(0, visibleStart - overscan);
+  const end = Math.min(rowCount, visibleStart + visibleCount + overscan);
+
+  return {
+    start,
+    end,
+    topPadding: start * rowHeight,
+    bottomPadding: Math.max(0, (rowCount - end) * rowHeight),
+  };
+}
+
 export function normalizeCellValue(value: unknown): CellValue {
   if (
     value === null ||

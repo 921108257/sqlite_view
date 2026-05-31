@@ -4,6 +4,8 @@ use serde_json::{Map, Value as JsonValue};
 
 use crate::error::{AppError, AppResult};
 
+const MAX_UNLIMITED_QUERY_ROWS: i64 = 500;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QueryResult {
     pub columns: Vec<String>,
@@ -66,9 +68,8 @@ pub fn query_table(conn: &Connection, params: &QueryParams) -> AppResult<QueryRe
         sql.push_str(&format!(" ORDER BY {} {}", quote_identifier(order_by), dir));
     }
 
-    if let Some(limit) = params.limit {
-        sql.push_str(&format!(" LIMIT {}", limit));
-    }
+    let effective_limit = params.limit.unwrap_or(MAX_UNLIMITED_QUERY_ROWS);
+    sql.push_str(&format!(" LIMIT {}", effective_limit));
 
     if let Some(offset) = params.offset {
         sql.push_str(&format!(" OFFSET {}", offset));
@@ -370,5 +371,31 @@ mod tests {
         .unwrap();
 
         assert_eq!(values, vec![json!("active"), json!("blocked")]);
+    }
+
+    #[test]
+    fn query_table_caps_unlimited_queries() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE items (id INTEGER PRIMARY KEY)", [])
+            .unwrap();
+        for _ in 0..5001 {
+            conn.execute("INSERT INTO items DEFAULT VALUES", []).unwrap();
+        }
+
+        let result = query_table(
+            &conn,
+            &QueryParams {
+                table: "items".to_string(),
+                limit: None,
+                offset: None,
+                order_by: Some("id".to_string()),
+                order_dir: Some("ASC".to_string()),
+                filters: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.total_count, 5001);
+        assert_eq!(result.rows.len(), MAX_UNLIMITED_QUERY_ROWS as usize);
     }
 }

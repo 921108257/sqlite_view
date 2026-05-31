@@ -39,13 +39,19 @@ function App() {
   const [tableToDelete, setTableToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const { selectedTable, refreshTables, refreshData, selectTable } =
+  const { selectedTable, pageSize, refreshTables, refreshData, selectTable } =
     useDatabaseStore();
   const { toast } = useToast();
 
   useEffect(() => {
     applyThemeClass(resolvedTheme);
   }, [resolvedTheme]);
+
+  useEffect(() => {
+    if (pageSize === "all" && viewMode === "json") {
+      setViewMode("table");
+    }
+  }, [pageSize, viewMode]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) {
@@ -165,7 +171,14 @@ function App() {
                   <Plus className="h-4 w-4 mr-1" />
                   {t("app.addRow")}
                 </Button>
-                <ViewToggle value={viewMode} onChange={setViewMode} />
+                <ViewToggle
+                  value={viewMode}
+                  onChange={(value) => {
+                    if (value === "json" && pageSize === "all") return;
+                    setViewMode(value);
+                  }}
+                  disableJson={pageSize === "all"}
+                />
               </div>
             </div>
             {viewMode === "table" ? <DataTable /> : <JsonView />}

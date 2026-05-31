@@ -7,6 +7,7 @@ import type {
   TableInfo,
 } from "@/types/database";
 import * as commands from "@/tauri/commands";
+import { buildTableQueryParams } from "./database-query";
 
 interface DatabaseState {
   // Connection state
@@ -28,6 +29,7 @@ interface DatabaseState {
 
   // Loading states
   isLoading: boolean;
+  isLoadingMore: boolean;
   error: string | null;
 
   // Actions
@@ -36,6 +38,7 @@ interface DatabaseState {
   refreshTables: () => Promise<void>;
   selectTable: (tableName: string | null) => Promise<void>;
   refreshData: () => Promise<void>;
+  loadMoreData: () => Promise<void>;
   setPage: (page: number) => void;
   setPageSize: (size: PageSize) => void;
   setOrderBy: (column: string | null, dir?: "ASC" | "DESC") => void;
@@ -59,6 +62,7 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
   orderDir: "ASC",
   filters: [],
   isLoading: false,
+  isLoadingMore: false,
   error: null,
 
   openDatabase: async (path: string) => {
@@ -87,6 +91,7 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
         queryResult: null,
         currentPage: 0,
         filters: [],
+        isLoadingMore: false,
       });
     } catch (e) {
       set({ error: String(e) });
@@ -117,6 +122,7 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
       orderBy: null,
       orderDir: "ASC",
       filters: [],
+      isLoadingMore: false,
     });
 
     if (!tableName) return;
@@ -139,20 +145,68 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
 
     set({ isLoading: true, error: null });
     try {
-      const paged = pageSize !== "all";
-      const result = await commands.queryTableData({
+      const result = await commands.queryTableData(buildTableQueryParams({
         table: selectedTable,
-        limit: paged ? pageSize : undefined,
-        offset: paged ? currentPage * pageSize : undefined,
-        order_by: orderBy ?? undefined,
-        order_dir: orderBy ? orderDir : undefined,
-        filters: filters.length ? filters : undefined,
-      });
+        currentPage,
+        pageSize,
+        orderBy,
+        orderDir,
+        filters,
+      }));
       set({ queryResult: result });
     } catch (e) {
       set({ error: String(e) });
     } finally {
       set({ isLoading: false });
+    }
+  },
+
+  loadMoreData: async () => {
+    const {
+      selectedTable,
+      pageSize,
+      orderBy,
+      orderDir,
+      filters,
+      queryResult,
+      isLoading,
+      isLoadingMore,
+    } = get();
+
+    if (
+      !selectedTable ||
+      pageSize !== "all" ||
+      !queryResult ||
+      isLoading ||
+      isLoadingMore ||
+      queryResult.rows.length >= queryResult.total_count
+    ) {
+      return;
+    }
+
+    set({ isLoadingMore: true, error: null });
+    try {
+      const result = await commands.queryTableData(buildTableQueryParams({
+        table: selectedTable,
+        currentPage: 0,
+        pageSize,
+        orderBy,
+        orderDir,
+        filters,
+        allRowsOffset: queryResult.rows.length,
+      }));
+
+      set({
+        queryResult: {
+          columns: result.columns,
+          rows: [...queryResult.rows, ...result.rows],
+          total_count: result.total_count,
+        },
+      });
+    } catch (e) {
+      set({ error: String(e) });
+    } finally {
+      set({ isLoadingMore: false });
     }
   },
 

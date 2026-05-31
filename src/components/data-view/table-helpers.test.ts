@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   COLUMN_MIN_WIDTH,
   getTotalPages,
+  getVirtualRowWindow,
   resolveFilterPanelSide,
   uniqueCellValues,
 } from "./table-helpers";
@@ -34,5 +35,22 @@ describe("data table helpers", () => {
         [null, 4],
       ], 0)
     ).toEqual(["active", "blocked", null]);
+  });
+
+  it("windows large row sets to the visible range plus overscan", () => {
+    expect(
+      getVirtualRowWindow({
+        rowCount: 1_000_000,
+        scrollTop: 3200,
+        viewportHeight: 320,
+        rowHeight: 32,
+        overscan: 4,
+      })
+    ).toEqual({
+      start: 96,
+      end: 114,
+      topPadding: 3072,
+      bottomPadding: 31_996_352,
+    });
   });
 });

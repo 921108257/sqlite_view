@@ -5,9 +5,10 @@ import { useI18n } from "@/lib/i18n";
 interface ViewToggleProps {
   value: "table" | "json";
   onChange: (value: "table" | "json") => void;
+  disableJson?: boolean;
 }
 
-export function ViewToggle({ value, onChange }: ViewToggleProps) {
+export function ViewToggle({ value, onChange, disableJson }: ViewToggleProps) {
   const { t } = useI18n();
 
   return (
@@ -17,7 +18,12 @@ export function ViewToggle({ value, onChange }: ViewToggleProps) {
           <Table2 className="h-3.5 w-3.5 mr-1.5" />
           {t("view.table")}
         </TabsTrigger>
-        <TabsTrigger value="json" className="h-7 px-3 text-xs">
+        <TabsTrigger
+          value="json"
+          className="h-7 px-3 text-xs"
+          disabled={disableJson}
+          title={disableJson ? t("view.jsonDisabledAll") : undefined}
+        >
           <Braces className="h-3.5 w-3.5 mr-1.5" />
           {t("view.json")}
         </TabsTrigger>
