@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useDatabaseStore } from "@/stores/database-store";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 interface SidebarProps {
   onCreateTable: () => void;
@@ -18,11 +19,14 @@ interface SidebarProps {
 
 export function Sidebar({ onCreateTable, onRenameTable, onDeleteTable }: SidebarProps) {
   const { tables, selectedTable, selectTable, isConnected } = useDatabaseStore();
+  const { t } = useI18n();
 
   if (!isConnected) {
     return (
       <aside className="w-64 border-r bg-muted/30 flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">No database connected</p>
+        <p className="text-sm text-muted-foreground">
+          {t("sidebar.noDatabaseConnected")}
+        </p>
       </aside>
     );
   }
@@ -30,7 +34,9 @@ export function Sidebar({ onCreateTable, onRenameTable, onDeleteTable }: Sidebar
   return (
     <aside className="w-64 border-r bg-muted/30 flex flex-col">
       <div className="p-3 border-b flex items-center justify-between">
-        <span className="text-sm font-medium">Tables ({tables.length})</span>
+        <span className="text-sm font-medium">
+          {t("sidebar.tables", { count: tables.length })}
+        </span>
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onCreateTable}>
           <Plus className="h-4 w-4" />
         </Button>
@@ -69,14 +75,14 @@ export function Sidebar({ onCreateTable, onRenameTable, onDeleteTable }: Sidebar
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => onRenameTable(table.name)}>
                     <Pencil className="h-4 w-4 mr-2" />
-                    Rename
+                    {t("sidebar.rename")}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="text-destructive"
                     onClick={() => onDeleteTable(table.name)}
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
+                    {t("sidebar.delete")}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

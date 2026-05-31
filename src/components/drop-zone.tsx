@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Upload } from "lucide-react";
 import { useDatabaseStore } from "@/stores/database-store";
+import { useI18n } from "@/lib/i18n";
 
 interface DropZoneProps {
   children: React.ReactNode;
@@ -14,6 +15,7 @@ interface FileDropPayload {
 export function DropZone({ children }: DropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const { openDatabase } = useDatabaseStore();
+  const { t } = useI18n();
 
   useEffect(() => {
     const unlistenDrop = listen<FileDropPayload>("tauri://drag-drop", async (event) => {
@@ -50,9 +52,9 @@ export function DropZone({ children }: DropZoneProps) {
         <div className="absolute inset-0 bg-primary/10 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-background border-2 border-dashed border-primary rounded-lg p-8 text-center">
             <Upload className="h-12 w-12 text-primary mx-auto mb-4" />
-            <p className="text-lg font-medium">Drop SQLite file here</p>
+            <p className="text-lg font-medium">{t("dropZone.title")}</p>
             <p className="text-sm text-muted-foreground mt-1">
-              Supports .db, .sqlite, .sqlite3, .db3
+              {t("dropZone.supported")}
             </p>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Header } from "@/components/layout/header";
 import { Sidebar } from "@/components/layout/sidebar";
 import { MainContent } from "@/components/layout/main-content";
@@ -16,11 +16,18 @@ import { useDatabaseStore } from "@/stores/database-store";
 import { deleteTable, renameExistingTable } from "@/tauri/commands";
 import { useToast } from "@/hooks/use-toast";
 import { useCliArgs } from "@/hooks/use-cli-args";
+import { useI18n } from "@/lib/i18n";
+import { applyThemeClass, useSettingsStore } from "@/stores/settings-store";
 
 function App() {
-  // 处理启动时的命令行参数（拖放文件到图标打开）
   useCliArgs();
 
+  const { t } = useI18n();
+  const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
+  const themePreference = useSettingsStore((state) => state.themePreference);
+  const refreshResolvedSettings = useSettingsStore(
+    (state) => state.refreshResolvedSettings
+  );
   const [viewMode, setViewMode] = useState<"table" | "json">("table");
   const [createTableOpen, setCreateTableOpen] = useState(false);
   const [addRowOpen, setAddRowOpen] = useState(false);
@@ -28,15 +35,34 @@ function App() {
   const [tableToDelete, setTableToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const { selectedTable, refreshTables, refreshData, selectTable } = useDatabaseStore();
+  const { selectedTable, refreshTables, refreshData, selectTable } =
+    useDatabaseStore();
   const { toast } = useToast();
+
+  useEffect(() => {
+    applyThemeClass(resolvedTheme);
+  }, [resolvedTheme]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return;
+    }
+
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = () => refreshResolvedSettings();
+
+    if (themePreference === "system") {
+      query.addEventListener("change", handleChange);
+      return () => query.removeEventListener("change", handleChange);
+    }
+  }, [refreshResolvedSettings, themePreference]);
 
   const handleCreateTable = () => {
     setCreateTableOpen(true);
   };
 
   const handleRenameTable = async (name: string) => {
-    const newName = prompt("Enter new table name:", name);
+    const newName = prompt(t("app.renameTablePrompt"), name);
     if (newName && newName !== name) {
       try {
         await renameExistingTable(name, newName);
@@ -44,9 +70,16 @@ function App() {
         if (selectedTable === name) {
           selectTable(newName);
         }
-        toast({ title: "Success", description: `Table renamed to "${newName}"` });
+        toast({
+          title: t("common.success"),
+          description: t("app.tableRenamed", { table: newName }),
+        });
       } catch (e) {
-        toast({ title: "Error", description: String(e), variant: "destructive" });
+        toast({
+          title: t("common.error"),
+          description: String(e),
+          variant: "destructive",
+        });
       }
     }
   };
@@ -65,11 +98,18 @@ function App() {
       if (selectedTable === tableToDelete) {
         selectTable(null);
       }
-      toast({ title: "Success", description: `Table "${tableToDelete}" deleted` });
+      toast({
+        title: t("common.success"),
+        description: t("app.tableDeleted", { table: tableToDelete }),
+      });
       setDeleteTableOpen(false);
       setTableToDelete(null);
     } catch (e) {
-      toast({ title: "Error", description: String(e), variant: "destructive" });
+      toast({
+        title: t("common.error"),
+        description: String(e),
+        variant: "destructive",
+      });
     } finally {
       setIsDeleting(false);
     }
@@ -86,36 +126,47 @@ function App() {
             onDeleteTable={handleDeleteTable}
           />
           <MainContent>
-            {/* Toolbar */}
             <div className="border-b p-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <h2 className="font-medium">{selectedTable}</h2>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={refreshData}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={refreshData}
+                >
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => setAddRowOpen(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAddRowOpen(true)}
+                >
                   <Plus className="h-4 w-4 mr-1" />
-                  Add Row
+                  {t("app.addRow")}
                 </Button>
                 <ViewToggle value={viewMode} onChange={setViewMode} />
               </div>
             </div>
-            {/* Data View */}
             {viewMode === "table" ? <DataTable /> : <JsonView />}
           </MainContent>
         </div>
       </div>
 
-      {/* Dialogs */}
-      <CreateTableDialog open={createTableOpen} onOpenChange={setCreateTableOpen} />
+      <CreateTableDialog
+        open={createTableOpen}
+        onOpenChange={setCreateTableOpen}
+      />
       <AddRowDialog open={addRowOpen} onOpenChange={setAddRowOpen} />
       <DeleteConfirmDialog
         open={deleteTableOpen}
         onOpenChange={setDeleteTableOpen}
-        title="Delete Table"
-        description={`Are you sure you want to delete table "${tableToDelete}"? This action cannot be undone.`}
+        title={t("app.deleteTableTitle")}
+        description={t("app.deleteTableDescription", {
+          table: tableToDelete ?? "",
+        })}
         onConfirm={confirmDeleteTable}
         isLoading={isDeleting}
       />

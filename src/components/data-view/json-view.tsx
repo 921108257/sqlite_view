@@ -1,9 +1,11 @@
 import { useMemo } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDatabaseStore } from "@/stores/database-store";
+import { useI18n } from "@/lib/i18n";
 
 export function JsonView() {
   const { queryResult } = useDatabaseStore();
+  const { t } = useI18n();
 
   const jsonData = useMemo(() => {
     if (!queryResult) return [];
@@ -19,7 +21,7 @@ export function JsonView() {
   if (!queryResult) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+        <p className="text-muted-foreground">{t("data.loading")}</p>
       </div>
     );
   }

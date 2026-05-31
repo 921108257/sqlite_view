@@ -27,6 +27,7 @@ import { CellEditor } from "./cell-editor";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { updateTableRow, deleteTableRow } from "@/tauri/commands";
 import { useToast } from "@/hooks/use-toast";
+import { useI18n } from "@/lib/i18n";
 import type { RowData, CellValue } from "@/types/database";
 
 export function DataTable() {
@@ -41,6 +42,7 @@ export function DataTable() {
     isLoading,
   } = useDatabaseStore();
   const { toast } = useToast();
+  const { t } = useI18n();
 
   const [editingCell, setEditingCell] = useState<{
     rowIndex: number;
@@ -69,9 +71,9 @@ export function DataTable() {
       const data: RowData = { [columnName]: newValue as CellValue };
       await updateTableRow(selectedTable, data, pkColumn.name, pkValue);
       await refreshData();
-      toast({ title: "Success", description: "Cell updated" });
+      toast({ title: t("common.success"), description: t("data.cellUpdated") });
     } catch (e) {
-      toast({ title: "Error", description: String(e), variant: "destructive" });
+      toast({ title: t("common.error"), description: String(e), variant: "destructive" });
     }
     setEditingCell(null);
   };
@@ -83,14 +85,14 @@ export function DataTable() {
     const pkColIndex = queryResult.columns.indexOf(pkColumn.name);
     const pkValue = row[pkColIndex];
 
-    if (!confirm("Are you sure you want to delete this row?")) return;
+    if (!confirm(t("data.deleteRowConfirm"))) return;
 
     try {
       await deleteTableRow(selectedTable, pkColumn.name, pkValue);
       await refreshData();
-      toast({ title: "Success", description: "Row deleted" });
+      toast({ title: t("common.success"), description: t("data.rowDeleted") });
     } catch (e) {
-      toast({ title: "Error", description: String(e), variant: "destructive" });
+      toast({ title: t("common.error"), description: String(e), variant: "destructive" });
     }
   };
 
@@ -173,7 +175,7 @@ export function DataTable() {
   if (!queryResult) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+        <p className="text-muted-foreground">{t("data.loading")}</p>
       </div>
     );
   }
@@ -209,7 +211,7 @@ export function DataTable() {
             ) : (
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-24 text-center">
-                  No data
+                  {t("data.noData")}
                 </TableCell>
               </TableRow>
             )}
@@ -221,11 +223,14 @@ export function DataTable() {
       {/* Pagination */}
       <div className="border-t p-2 flex items-center justify-between">
         <div className="text-sm text-muted-foreground">
-          {queryResult.total_count} rows total
+          {t("data.rowsTotal", { count: queryResult.total_count })}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">
-            Page {currentPage + 1} of {totalPages || 1}
+            {t("data.pageOf", {
+              page: currentPage + 1,
+              total: totalPages || 1,
+            })}
           </span>
           <div className="flex items-center gap-1">
             <Button

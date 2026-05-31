@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { insertTableRow } from "@/tauri/commands";
 import { useDatabaseStore } from "@/stores/database-store";
 import { useToast } from "@/hooks/use-toast";
+import { useI18n } from "@/lib/i18n";
 import type { RowData } from "@/types/database";
 
 interface AddRowDialogProps {
@@ -24,6 +25,7 @@ export function AddRowDialog({ open, onOpenChange }: AddRowDialogProps) {
   const [formData, setFormData] = useState<RowData>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+  const { t } = useI18n();
 
   useEffect(() => {
     if (open) {
@@ -50,10 +52,10 @@ export function AddRowDialog({ open, onOpenChange }: AddRowDialogProps) {
 
       await insertTableRow(selectedTable, data);
       await refreshData();
-      toast({ title: "Success", description: "Row added successfully" });
+      toast({ title: t("common.success"), description: t("addRow.added") });
       onOpenChange(false);
     } catch (e) {
-      toast({ title: "Error", description: String(e), variant: "destructive" });
+      toast({ title: t("common.error"), description: String(e), variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -64,7 +66,7 @@ export function AddRowDialog({ open, onOpenChange }: AddRowDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add New Row</DialogTitle>
+          <DialogTitle>{t("addRow.title")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           {nonPkColumns.map((col) => (
@@ -101,10 +103,10 @@ export function AddRowDialog({ open, onOpenChange }: AddRowDialogProps) {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? "Adding..." : "Add Row"}
+            {isSubmitting ? t("addRow.adding") : t("addRow.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>

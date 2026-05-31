@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { createNewTable } from "@/tauri/commands";
 import { useDatabaseStore } from "@/stores/database-store";
 import { useToast } from "@/hooks/use-toast";
+import { useI18n } from "@/lib/i18n";
 import type { CreateColumnDef } from "@/types/database";
 
 interface CreateTableDialogProps {
@@ -35,6 +36,7 @@ export function CreateTableDialog({ open, onOpenChange }: CreateTableDialogProps
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { refreshTables } = useDatabaseStore();
   const { toast } = useToast();
+  const { t } = useI18n();
 
   const addColumn = () => {
     setColumns([...columns, { ...defaultColumn }]);
@@ -51,15 +53,15 @@ export function CreateTableDialog({ open, onOpenChange }: CreateTableDialogProps
   };
   const handleSubmit = async () => {
     if (!tableName.trim()) {
-      toast({ title: "Error", description: "Table name is required", variant: "destructive" });
+      toast({ title: t("common.error"), description: t("createTable.nameRequired"), variant: "destructive" });
       return;
     }
     if (columns.length === 0) {
-      toast({ title: "Error", description: "At least one column is required", variant: "destructive" });
+      toast({ title: t("common.error"), description: t("createTable.oneColumnRequired"), variant: "destructive" });
       return;
     }
     if (columns.some((c) => !c.name.trim())) {
-      toast({ title: "Error", description: "All columns must have a name", variant: "destructive" });
+      toast({ title: t("common.error"), description: t("createTable.allColumnsNamed"), variant: "destructive" });
       return;
     }
 
@@ -67,12 +69,12 @@ export function CreateTableDialog({ open, onOpenChange }: CreateTableDialogProps
     try {
       await createNewTable(tableName, columns);
       await refreshTables();
-      toast({ title: "Success", description: `Table "${tableName}" created` });
+      toast({ title: t("common.success"), description: t("createTable.created", { table: tableName }) });
       onOpenChange(false);
       setTableName("");
       setColumns([{ ...defaultColumn, name: "id", data_type: "INTEGER", pk: true }]);
     } catch (e) {
-      toast({ title: "Error", description: String(e), variant: "destructive" });
+      toast({ title: t("common.error"), description: String(e), variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -81,11 +83,11 @@ export function CreateTableDialog({ open, onOpenChange }: CreateTableDialogProps
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Create New Table</DialogTitle>
+          <DialogTitle>{t("createTable.title")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium">Table Name</label>
+            <label className="text-sm font-medium">{t("createTable.tableName")}</label>
             <Input
               value={tableName}
               onChange={(e) => setTableName(e.target.value)}
@@ -95,10 +97,10 @@ export function CreateTableDialog({ open, onOpenChange }: CreateTableDialogProps
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium">Columns</label>
+              <label className="text-sm font-medium">{t("createTable.columns")}</label>
               <Button variant="outline" size="sm" onClick={addColumn}>
                 <Plus className="h-4 w-4 mr-1" />
-                Add Column
+                {t("createTable.addColumn")}
               </Button>
             </div>
             <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -126,7 +128,7 @@ export function CreateTableDialog({ open, onOpenChange }: CreateTableDialogProps
                       checked={col.pk}
                       onChange={(e) => updateColumn(index, "pk", e.target.checked)}
                     />
-                    PK
+                    {t("createTable.primaryKey")}
                   </label>
                   <label className="flex items-center gap-1 text-sm">
                     <input
@@ -134,7 +136,7 @@ export function CreateTableDialog({ open, onOpenChange }: CreateTableDialogProps
                       checked={col.notnull}
                       onChange={(e) => updateColumn(index, "notnull", e.target.checked)}
                     />
-                    NOT NULL
+                    {t("createTable.notNull")}
                   </label>
                   <Button
                     variant="ghost"
@@ -152,10 +154,10 @@ export function CreateTableDialog({ open, onOpenChange }: CreateTableDialogProps
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? "Creating..." : "Create Table"}
+            {isSubmitting ? t("createTable.creating") : t("createTable.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>
