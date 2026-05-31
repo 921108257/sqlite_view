@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    sqlite_view_temp_lib::run()
+    sqlite_view_lib::run()
 }
