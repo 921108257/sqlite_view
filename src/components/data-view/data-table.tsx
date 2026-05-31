@@ -23,18 +23,17 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmDialog } from "@/components/dialogs/delete-confirm-dialog";
+import { EditRowDialog } from "@/components/dialogs/edit-row-dialog";
 import { useDatabaseStore } from "@/stores/database-store";
 import {
   clearTableData,
   deleteTableRow,
   deleteTableRows,
-  updateTableRow,
 } from "@/tauri/commands";
 import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { ColumnHeader } from "./column-header";
-import { CellEditor } from "./cell-editor";
 import { ColumnFilterPopover } from "./column-filter-popover";
 import {
   COLUMN_MIN_WIDTH,
@@ -47,7 +46,6 @@ import {
 import type { CellValue, PageSize, RowData } from "@/types/database";
 
 const SELECT_COLUMN_WIDTH = 42;
-const ACTION_COLUMN_WIDTH = 44;
 
 type DeleteTarget =
   | { type: "row"; pkValue: CellValue }
@@ -58,7 +56,6 @@ interface ContextMenuState {
   x: number;
   y: number;
   rowIndex: number;
-  colIndex: number;
 }
 
 interface FilterPanelState {
@@ -90,9 +87,9 @@ export function DataTable() {
   const { toast } = useToast();
   const { t } = useI18n();
 
-  const [editingCell, setEditingCell] = useState<{
-    rowIndex: number;
-    colIndex: number;
+  const [rowToEdit, setRowToEdit] = useState<{
+    rowData: RowData;
+    pkValue: CellValue;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -142,7 +139,6 @@ export function DataTable() {
   const selectedCount = Object.keys(selectedRows).length;
   const tableWidth =
     SELECT_COLUMN_WIDTH +
-    ACTION_COLUMN_WIDTH +
     columns.reduce(
       (total, column) => total + (columnWidths[column] ?? COLUMN_MIN_WIDTH),
       0
@@ -159,37 +155,6 @@ export function DataTable() {
   const hasVisibleSelection = visibleSelectionKeys.some(
     (key) => selectedRows[key] !== undefined
   );
-
-  const handleCellDoubleClick = (rowIndex: number, colIndex: number) => {
-    if (!pkColumn) return;
-    setEditingCell({ rowIndex, colIndex });
-  };
-
-  const handleCellSave = async (
-    rowIndex: number,
-    colIndex: number,
-    newValue: unknown
-  ) => {
-    if (!selectedTable || !pkColumn || !queryResult || pkColumnIndex < 0) return;
-
-    const row = queryResult.rows[rowIndex];
-    const pkValue = row[pkColumnIndex];
-    const columnName = queryResult.columns[colIndex];
-
-    try {
-      const data: RowData = { [columnName]: newValue as CellValue };
-      await updateTableRow(selectedTable, data, pkColumn.name, pkValue);
-      await refreshData();
-      toast({ title: t("common.success"), description: t("data.cellUpdated") });
-    } catch (e) {
-      toast({
-        title: t("common.error"),
-        description: String(e),
-        variant: "destructive",
-      });
-    }
-    setEditingCell(null);
-  };
 
   const getRowPkValue = useCallback(
     (rowIndex: number) => {
@@ -242,6 +207,19 @@ export function DataTable() {
     setDeleteTarget({ type: "row", pkValue });
   };
 
+  const handleEditRow = (rowIndex: number) => {
+    if (!pkColumn || !queryResult || pkColumnIndex < 0) return;
+    const row = queryResult.rows[rowIndex];
+    const pkValue = normalizeCellValue(row[pkColumnIndex]);
+    const rowData: RowData = {};
+
+    queryResult.columns.forEach((column, index) => {
+      rowData[column] = normalizeCellValue(row[index]);
+    });
+
+    setRowToEdit({ rowData, pkValue });
+  };
+
   const handleDeleteSelected = () => {
     if (!pkColumn || !selectedCount) return;
     setDeleteTarget({
@@ -270,7 +248,9 @@ export function DataTable() {
       toast({
         title: t("common.success"),
         description:
-          deleteTarget.type === "clear" ? "Table cleared" : t("data.rowDeleted"),
+          deleteTarget.type === "clear"
+            ? t("data.tableCleared")
+            : t("data.rowDeleted"),
       });
     } catch (e) {
       toast({
@@ -285,24 +265,19 @@ export function DataTable() {
 
   const openContextMenu = (
     event: ReactMouseEvent,
-    rowIndex: number,
-    colIndex: number
+    rowIndex: number
   ) => {
     event.preventDefault();
     setContextMenu({
       x: Math.min(event.clientX, window.innerWidth - 160),
       y: Math.min(event.clientY, window.innerHeight - 96),
       rowIndex,
-      colIndex,
     });
   };
 
-  const editContextCell = () => {
+  const editContextRow = () => {
     if (!contextMenu || !pkColumn) return;
-    setEditingCell({
-      rowIndex: contextMenu.rowIndex,
-      colIndex: contextMenu.colIndex,
-    });
+    handleEditRow(contextMenu.rowIndex);
     setContextMenu(null);
   };
 
@@ -382,7 +357,7 @@ export function DataTable() {
             disabled={isLoading || queryResult.total_count === 0}
           >
             <Eraser className="mr-1.5 h-3.5 w-3.5" />
-            Clear table
+            {t("data.clearTable")}
           </Button>
           <Button
             variant="outline"
@@ -390,20 +365,22 @@ export function DataTable() {
             className="h-8 rounded-sm px-2"
             onClick={handleDeleteSelected}
             disabled={!pkColumn || selectedCount === 0 || isLoading}
-            title={!pkColumn ? "No primary key: delete selected is disabled" : undefined}
+            title={
+              !pkColumn ? t("data.deleteSelectedDisabledNoPrimaryKey") : undefined
+            }
           >
             <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-            Delete selected
+            {t("data.deleteSelected")}
           </Button>
           {selectedCount > 0 && (
             <span className="font-mono text-xs text-muted-foreground">
-              {selectedCount} selected
+              {t("data.selectedCount", { count: selectedCount })}
             </span>
           )}
         </div>
         {!pkColumn && (
           <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-            No primary key: row edit/delete disabled
+            {t("data.noPrimaryKeyRowActionsDisabled")}
           </span>
         )}
       </div>
@@ -421,7 +398,6 @@ export function DataTable() {
                 style={{ width: columnWidths[column] ?? COLUMN_MIN_WIDTH }}
               />
             ))}
-            <col style={{ width: ACTION_COLUMN_WIDTH }} />
           </colgroup>
           <TableHeader className="sticky top-0 z-20 bg-background">
             <TableRow className="hover:bg-transparent">
@@ -452,7 +428,6 @@ export function DataTable() {
                   />
                 </TableHead>
               ))}
-              <TableHead className="h-9 border-b bg-background p-0" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -468,7 +443,7 @@ export function DataTable() {
                   key={`${rowIndex}-${pkValue ?? "row"}`}
                   data-state={selected ? "selected" : undefined}
                   className="group hover:bg-muted/40"
-                  onContextMenu={(event) => openContextMenu(event, rowIndex, 0)}
+                  onContextMenu={(event) => openContextMenu(event, rowIndex)}
                 >
                   <TableCell className="sticky left-0 z-10 border-b border-r bg-background p-0 text-center group-hover:bg-muted/40">
                     <input
@@ -482,10 +457,6 @@ export function DataTable() {
                   </TableCell>
                   {columns.map((column, colIndex) => {
                     const value = normalizeCellValue(row[colIndex]);
-                    const colInfo = tableColumns.find((item) => item.name === column);
-                    const editing =
-                      editingCell?.rowIndex === rowIndex &&
-                      editingCell?.colIndex === colIndex;
 
                     return (
                       <TableCell
@@ -497,47 +468,22 @@ export function DataTable() {
                           maxWidth: columnWidths[column] ?? COLUMN_MIN_WIDTH,
                         }}
                         onContextMenu={(event) =>
-                          openContextMenu(event, rowIndex, colIndex)
+                          openContextMenu(event, rowIndex)
                         }
                       >
-                        {editing ? (
-                          <CellEditor
-                            value={value}
-                            dataType={colInfo?.data_type ?? "TEXT"}
-                            onSave={(newValue) =>
-                              handleCellSave(rowIndex, colIndex, newValue)
-                            }
-                            onCancel={() => setEditingCell(null)}
-                          />
-                        ) : (
-                          <div
-                            className={cn(
-                              "min-w-0 cursor-cell truncate rounded-sm px-1 py-0.5 font-mono text-xs hover:bg-muted",
-                              value === null && "italic text-muted-foreground"
-                            )}
-                            title={formatCellValue(value)}
-                            onDoubleClick={() =>
-                              handleCellDoubleClick(rowIndex, colIndex)
-                            }
-                          >
-                            {formatCellValue(value)}
-                          </div>
-                        )}
+                        <div
+                          className={cn(
+                            "min-w-0 cursor-cell truncate rounded-sm px-1 py-0.5 font-mono text-xs hover:bg-muted",
+                            value === null && "italic text-muted-foreground"
+                          )}
+                          title={formatCellValue(value)}
+                          onDoubleClick={() => handleEditRow(rowIndex)}
+                        >
+                          {formatCellValue(value)}
+                        </div>
                       </TableCell>
                     );
                   })}
-                  <TableCell className="border-b p-0 text-center">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded-sm opacity-0 group-hover:opacity-100"
-                      onClick={() => handleDeleteRow(rowIndex)}
-                      disabled={!pkColumn}
-                      title={!pkColumn ? "No primary key" : "Delete row"}
-                    >
-                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                    </Button>
-                  </TableCell>
                 </TableRow>
               );
             })}
@@ -559,7 +505,7 @@ export function DataTable() {
             <option value="100">100</option>
             <option value="500">500</option>
             <option value="1000">1000</option>
-            <option value="all">All</option>
+            <option value="all">{t("data.pageSizeAll")}</option>
           </select>
         </div>
         <div className="flex items-center gap-2">
@@ -623,11 +569,11 @@ export function DataTable() {
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
-            onClick={editContextCell}
+            onClick={editContextRow}
             disabled={!pkColumn}
           >
             <Edit3 className="h-3.5 w-3.5" />
-            Modify
+            {t("common.modify")}
           </button>
           <button
             type="button"
@@ -636,7 +582,7 @@ export function DataTable() {
             disabled={!pkColumn}
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Delete
+            {t("common.delete")}
           </button>
         </div>
       )}
@@ -654,10 +600,19 @@ export function DataTable() {
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
-        title={getDeleteTitle(deleteTarget)}
-        description={getDeleteDescription(deleteTarget, selectedTable)}
+        title={getDeleteTitle(deleteTarget, t)}
+        description={getDeleteDescription(deleteTarget, selectedTable, t)}
         onConfirm={confirmDelete}
         isLoading={isDeleting}
+      />
+      <EditRowDialog
+        open={rowToEdit !== null}
+        onOpenChange={(open) => {
+          if (!open) setRowToEdit(null);
+        }}
+        rowData={rowToEdit?.rowData ?? null}
+        pkColumnName={pkColumn?.name ?? null}
+        pkValue={rowToEdit?.pkValue ?? null}
       />
     </div>
   );
@@ -672,18 +627,24 @@ function rowSelectionKey(value: CellValue) {
   return JSON.stringify(value);
 }
 
-function getDeleteTitle(target: DeleteTarget | null) {
-  if (target?.type === "clear") return "Clear table";
-  if (target?.type === "selected") return "Delete selected rows";
-  return "Delete row";
+type Translate = ReturnType<typeof useI18n>["t"];
+
+function getDeleteTitle(target: DeleteTarget | null, t: Translate) {
+  if (target?.type === "clear") return t("data.clearTableTitle");
+  if (target?.type === "selected") return t("data.deleteSelectedTitle");
+  return t("data.deleteRowTitle");
 }
 
-function getDeleteDescription(target: DeleteTarget | null, table: string | null) {
+function getDeleteDescription(
+  target: DeleteTarget | null,
+  table: string | null,
+  t: Translate
+) {
   if (target?.type === "clear") {
-    return `Delete all rows from "${table ?? ""}"? This action cannot be undone.`;
+    return t("data.clearTableConfirm", { table: table ?? "" });
   }
   if (target?.type === "selected") {
-    return `Delete ${target.pkValues.length} selected row(s)? This action cannot be undone.`;
+    return t("data.deleteSelectedConfirm", { count: target.pkValues.length });
   }
-  return "Are you sure you want to delete this row?";
+  return t("data.deleteRowConfirm");
 }

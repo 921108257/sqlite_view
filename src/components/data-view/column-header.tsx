@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Funnel } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDatabaseStore } from "@/stores/database-store";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 interface ColumnHeaderProps {
   column: string;
@@ -18,6 +19,7 @@ export function ColumnHeader({
   onResizeStart,
 }: ColumnHeaderProps) {
   const { orderBy, orderDir, setOrderBy } = useDatabaseStore();
+  const { t } = useI18n();
   const isActive = orderBy === column;
 
   return (
@@ -48,13 +50,13 @@ export function ColumnHeader({
           filtered && "bg-primary/10 text-primary hover:bg-primary/15"
         )}
         onClick={onFilterClick}
-        title={`Filter ${column}`}
+        title={t("data.filterColumn", { column })}
       >
         <Funnel className="h-3.5 w-3.5" />
       </Button>
       <button
         type="button"
-        aria-label={`Resize ${column}`}
+        aria-label={t("data.resizeColumn", { column })}
         className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize rounded-sm bg-transparent hover:bg-primary/50"
         onMouseDown={onResizeStart}
       />

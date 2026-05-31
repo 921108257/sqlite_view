@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDatabaseStore } from "@/stores/database-store";
 import { getTableColumnValues } from "@/tauri/commands";
 import { useToast } from "@/hooks/use-toast";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
   FILTER_PANEL_WIDTH,
@@ -38,6 +39,7 @@ export function ColumnFilterPopover({
     clearColumnFilter,
   } = useDatabaseStore();
   const { toast } = useToast();
+  const { t } = useI18n();
   const panelRef = useRef<HTMLDivElement>(null);
   const currentFilter = filters.find((filter) => filter.column === column);
   const [search, setSearch] = useState(currentFilter?.search ?? "");
@@ -83,7 +85,7 @@ export function ColumnFilterPopover({
       .catch((error) => {
         if (!active) return;
         toast({
-          title: "Filter values failed",
+          title: t("data.filterValuesFailed"),
           description: String(error),
           variant: "destructive",
         });
@@ -95,7 +97,7 @@ export function ColumnFilterPopover({
     return () => {
       active = false;
     };
-  }, [column, currentFilter?.values, filters, selectedTable, toast]);
+  }, [column, currentFilter?.values, filters, selectedTable, toast, t]);
 
   const valueMap = useMemo(() => {
     const map = new Map<string, CellValue>();
@@ -163,7 +165,7 @@ export function ColumnFilterPopover({
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="LIKE search"
+              placeholder={t("data.likeSearch")}
               spellCheck={false}
               className="h-8 rounded-sm border-0 bg-background pl-7 pr-2 font-mono text-xs shadow-none ring-1 ring-border/80 focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-0"
             />
@@ -176,7 +178,7 @@ export function ColumnFilterPopover({
             size="icon"
             className="h-8 w-8 rounded-sm"
             onClick={clearFilter}
-            title="Clear filter"
+            title={t("data.clearFilter")}
           >
             <X className="h-3.5 w-3.5" />
           </Button>
@@ -188,7 +190,7 @@ export function ColumnFilterPopover({
           {isLoading ? (
             <div className="flex h-20 items-center justify-center text-xs text-muted-foreground">
               <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-              Loading
+              {t("data.loadingFilterValues")}
             </div>
           ) : (
             visibleValues.map((value) => {
