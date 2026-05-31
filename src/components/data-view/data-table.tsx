@@ -25,6 +25,7 @@ import { useDatabaseStore } from "@/stores/database-store";
 import { ColumnHeader } from "./column-header";
 import { CellEditor } from "./cell-editor";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { DeleteConfirmDialog } from "@/components/dialogs/delete-confirm-dialog";
 import { updateTableRow, deleteTableRow } from "@/tauri/commands";
 import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
@@ -48,6 +49,10 @@ export function DataTable() {
     rowIndex: number;
     colIndex: number;
   } | null>(null);
+  const [rowToDelete, setRowToDelete] = useState<{
+    pkValue: CellValue;
+  } | null>(null);
+  const [isDeletingRow, setIsDeletingRow] = useState(false);
 
   const pkColumn = tableColumns.find((c) => c.pk);
 
@@ -78,21 +83,29 @@ export function DataTable() {
     setEditingCell(null);
   };
 
-  const handleDeleteRow = async (rowIndex: number) => {
+  const handleDeleteRow = (rowIndex: number) => {
     if (!selectedTable || !pkColumn || !queryResult) return;
 
     const row = queryResult.rows[rowIndex];
     const pkColIndex = queryResult.columns.indexOf(pkColumn.name);
-    const pkValue = row[pkColIndex];
+    const pkValue = row[pkColIndex] as CellValue;
 
-    if (!confirm(t("data.deleteRowConfirm"))) return;
+    setRowToDelete({ pkValue });
+  };
 
+  const confirmDeleteRow = async () => {
+    if (!selectedTable || !pkColumn || !rowToDelete) return;
+
+    setIsDeletingRow(true);
     try {
-      await deleteTableRow(selectedTable, pkColumn.name, pkValue);
+      await deleteTableRow(selectedTable, pkColumn.name, rowToDelete.pkValue);
       await refreshData();
       toast({ title: t("common.success"), description: t("data.rowDeleted") });
+      setRowToDelete(null);
     } catch (e) {
       toast({ title: t("common.error"), description: String(e), variant: "destructive" });
+    } finally {
+      setIsDeletingRow(false);
     }
   };
 
@@ -272,6 +285,16 @@ export function DataTable() {
           </div>
         </div>
       </div>
+      <DeleteConfirmDialog
+        open={rowToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setRowToDelete(null);
+        }}
+        title={t("common.delete")}
+        description={t("data.deleteRowConfirm")}
+        onConfirm={confirmDeleteRow}
+        isLoading={isDeletingRow}
+      />
     </div>
   );
 }

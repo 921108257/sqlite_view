@@ -8,6 +8,7 @@ import { ViewToggle } from "@/components/data-view/view-toggle";
 import { DropZone } from "@/components/drop-zone";
 import { CreateTableDialog } from "@/components/dialogs/create-table-dialog";
 import { DeleteConfirmDialog } from "@/components/dialogs/delete-confirm-dialog";
+import { RenameTableDialog } from "@/components/dialogs/rename-table-dialog";
 import { AddRowDialog } from "@/components/dialogs/add-row-dialog";
 import { Toaster } from "@/components/ui/toaster";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,9 @@ function App() {
   const [viewMode, setViewMode] = useState<"table" | "json">("table");
   const [createTableOpen, setCreateTableOpen] = useState(false);
   const [addRowOpen, setAddRowOpen] = useState(false);
+  const [renameTableOpen, setRenameTableOpen] = useState(false);
+  const [tableToRename, setTableToRename] = useState<string | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
   const [deleteTableOpen, setDeleteTableOpen] = useState(false);
   const [tableToDelete, setTableToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -61,26 +65,40 @@ function App() {
     setCreateTableOpen(true);
   };
 
-  const handleRenameTable = async (name: string) => {
-    const newName = prompt(t("app.renameTablePrompt"), name);
-    if (newName && newName !== name) {
-      try {
-        await renameExistingTable(name, newName);
-        await refreshTables();
-        if (selectedTable === name) {
-          selectTable(newName);
-        }
-        toast({
-          title: t("common.success"),
-          description: t("app.tableRenamed", { table: newName }),
-        });
-      } catch (e) {
-        toast({
-          title: t("common.error"),
-          description: String(e),
-          variant: "destructive",
-        });
+  const handleRenameTable = (name: string) => {
+    setTableToRename(name);
+    setRenameTableOpen(true);
+  };
+
+  const confirmRenameTable = async (newName: string) => {
+    if (!tableToRename) return;
+
+    if (newName === tableToRename) {
+      setRenameTableOpen(false);
+      return;
+    }
+
+    setIsRenaming(true);
+    try {
+      await renameExistingTable(tableToRename, newName);
+      await refreshTables();
+      if (selectedTable === tableToRename) {
+        selectTable(newName);
       }
+      toast({
+        title: t("common.success"),
+        description: t("app.tableRenamed", { table: newName }),
+      });
+      setRenameTableOpen(false);
+      setTableToRename(null);
+    } catch (e) {
+      toast({
+        title: t("common.error"),
+        description: String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setIsRenaming(false);
     }
   };
 
@@ -160,6 +178,13 @@ function App() {
         onOpenChange={setCreateTableOpen}
       />
       <AddRowDialog open={addRowOpen} onOpenChange={setAddRowOpen} />
+      <RenameTableDialog
+        open={renameTableOpen}
+        currentName={tableToRename}
+        onOpenChange={setRenameTableOpen}
+        onConfirm={confirmRenameTable}
+        isLoading={isRenaming}
+      />
       <DeleteConfirmDialog
         open={deleteTableOpen}
         onOpenChange={setDeleteTableOpen}
