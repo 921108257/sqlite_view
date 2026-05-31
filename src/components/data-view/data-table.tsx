@@ -1,12 +1,20 @@
-import { useMemo, useState } from "react";
 import {
-  useReactTable,
-  getCoreRowModel,
-  flexRender,
-  type ColumnDef,
-} from "@tanstack/react-table";
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import {
-  Table,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Edit3,
+  Eraser,
+  Trash2,
+} from "lucide-react";
+import {
   TableBody,
   TableCell,
   TableHead,
@@ -14,22 +22,55 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import {
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  Trash2,
-} from "lucide-react";
-import { useDatabaseStore } from "@/stores/database-store";
-import { ColumnHeader } from "./column-header";
-import { CellEditor } from "./cell-editor";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { DeleteConfirmDialog } from "@/components/dialogs/delete-confirm-dialog";
-import { updateTableRow, deleteTableRow } from "@/tauri/commands";
+import { useDatabaseStore } from "@/stores/database-store";
+import {
+  clearTableData,
+  deleteTableRow,
+  deleteTableRows,
+  updateTableRow,
+} from "@/tauri/commands";
 import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
-import type { RowData, CellValue } from "@/types/database";
+import { cn } from "@/lib/utils";
+import { ColumnHeader } from "./column-header";
+import { CellEditor } from "./cell-editor";
+import { ColumnFilterPopover } from "./column-filter-popover";
+import {
+  COLUMN_MIN_WIDTH,
+  formatCellValue,
+  getTotalPages,
+  normalizeCellValue,
+  resolveFilterPanelSide,
+  type FilterPanelSide,
+} from "./table-helpers";
+import type { CellValue, PageSize, RowData } from "@/types/database";
+
+const SELECT_COLUMN_WIDTH = 42;
+const ACTION_COLUMN_WIDTH = 44;
+
+type DeleteTarget =
+  | { type: "row"; pkValue: CellValue }
+  | { type: "selected"; pkValues: CellValue[] }
+  | { type: "clear" };
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  rowIndex: number;
+  colIndex: number;
+}
+
+interface FilterPanelState {
+  column: string;
+  anchor: {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+    side: FilterPanelSide;
+  };
+}
 
 export function DataTable() {
   const {
@@ -38,7 +79,11 @@ export function DataTable() {
     selectedTable,
     currentPage,
     pageSize,
+    orderBy,
+    orderDir,
+    filters,
     setPage,
+    setPageSize,
     refreshData,
     isLoading,
   } = useDatabaseStore();
@@ -49,14 +94,74 @@ export function DataTable() {
     rowIndex: number;
     colIndex: number;
   } | null>(null);
-  const [rowToDelete, setRowToDelete] = useState<{
-    pkValue: CellValue;
-  } | null>(null);
-  const [isDeletingRow, setIsDeletingRow] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<Record<string, CellValue>>({});
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const [filterPanel, setFilterPanel] = useState<FilterPanelState | null>(null);
 
-  const pkColumn = tableColumns.find((c) => c.pk);
+  const pkColumn = tableColumns.find((column) => column.pk);
+  const pkColumnIndex = pkColumn && queryResult
+    ? queryResult.columns.indexOf(pkColumn.name)
+    : -1;
+  const rows = queryResult?.rows ?? [];
+  const columns = queryResult?.columns ?? [];
+  const columnsKey = columns.join("\u0000");
+  const filtersKey = JSON.stringify(filters);
+
+  useEffect(() => {
+    if (!columns.length) return;
+
+    setColumnWidths((previous) => {
+      const next: Record<string, number> = {};
+      columns.forEach((column) => {
+        next[column] = Math.max(previous[column] ?? COLUMN_MIN_WIDTH, COLUMN_MIN_WIDTH);
+      });
+      return next;
+    });
+  }, [columnsKey, columns]);
+
+  useEffect(() => {
+    setSelectedRows({});
+  }, [selectedTable, currentPage, pageSize, orderBy, orderDir, filtersKey]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    const close = () => setContextMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [contextMenu]);
+
+  const totalPages = getTotalPages(queryResult?.total_count ?? 0, pageSize);
+  const selectedCount = Object.keys(selectedRows).length;
+  const tableWidth =
+    SELECT_COLUMN_WIDTH +
+    ACTION_COLUMN_WIDTH +
+    columns.reduce(
+      (total, column) => total + (columnWidths[column] ?? COLUMN_MIN_WIDTH),
+      0
+    );
+
+  const visibleSelectionKeys = useMemo(() => {
+    if (!pkColumn || pkColumnIndex < 0) return [];
+    return rows.map((row) => rowSelectionKey(normalizeCellValue(row[pkColumnIndex])));
+  }, [pkColumn, pkColumnIndex, rows]);
+
+  const allVisibleSelected =
+    visibleSelectionKeys.length > 0 &&
+    visibleSelectionKeys.every((key) => selectedRows[key] !== undefined);
+  const hasVisibleSelection = visibleSelectionKeys.some(
+    (key) => selectedRows[key] !== undefined
+  );
 
   const handleCellDoubleClick = (rowIndex: number, colIndex: number) => {
+    if (!pkColumn) return;
     setEditingCell({ rowIndex, colIndex });
   };
 
@@ -65,11 +170,10 @@ export function DataTable() {
     colIndex: number,
     newValue: unknown
   ) => {
-    if (!selectedTable || !pkColumn || !queryResult) return;
+    if (!selectedTable || !pkColumn || !queryResult || pkColumnIndex < 0) return;
 
     const row = queryResult.rows[rowIndex];
-    const pkColIndex = queryResult.columns.indexOf(pkColumn.name);
-    const pkValue = row[pkColIndex];
+    const pkValue = row[pkColumnIndex];
     const columnName = queryResult.columns[colIndex];
 
     try {
@@ -78,223 +182,508 @@ export function DataTable() {
       await refreshData();
       toast({ title: t("common.success"), description: t("data.cellUpdated") });
     } catch (e) {
-      toast({ title: t("common.error"), description: String(e), variant: "destructive" });
+      toast({
+        title: t("common.error"),
+        description: String(e),
+        variant: "destructive",
+      });
     }
     setEditingCell(null);
   };
 
-  const handleDeleteRow = (rowIndex: number) => {
-    if (!selectedTable || !pkColumn || !queryResult) return;
+  const getRowPkValue = useCallback(
+    (rowIndex: number) => {
+      if (!queryResult || pkColumnIndex < 0) return null;
+      return normalizeCellValue(queryResult.rows[rowIndex]?.[pkColumnIndex]);
+    },
+    [pkColumnIndex, queryResult]
+  );
 
-    const row = queryResult.rows[rowIndex];
-    const pkColIndex = queryResult.columns.indexOf(pkColumn.name);
-    const pkValue = row[pkColIndex] as CellValue;
+  const toggleRowSelection = (rowIndex: number) => {
+    if (!pkColumn) return;
+    const pkValue = getRowPkValue(rowIndex);
+    if (pkValue === null && pkColumnIndex < 0) return;
+    const key = rowSelectionKey(pkValue);
 
-    setRowToDelete({ pkValue });
+    setSelectedRows((previous) => {
+      const next = { ...previous };
+      if (next[key] !== undefined) {
+        delete next[key];
+      } else {
+        next[key] = pkValue;
+      }
+      return next;
+    });
   };
 
-  const confirmDeleteRow = async () => {
-    if (!selectedTable || !pkColumn || !rowToDelete) return;
+  const toggleAllVisibleRows = () => {
+    if (!pkColumn || pkColumnIndex < 0) return;
 
-    setIsDeletingRow(true);
+    setSelectedRows((previous) => {
+      const next = { ...previous };
+      if (allVisibleSelected) {
+        visibleSelectionKeys.forEach((key) => {
+          delete next[key];
+        });
+      } else {
+        rows.forEach((row) => {
+          const pkValue = normalizeCellValue(row[pkColumnIndex]);
+          next[rowSelectionKey(pkValue)] = pkValue;
+        });
+      }
+      return next;
+    });
+  };
+
+  const handleDeleteRow = (rowIndex: number) => {
+    if (!pkColumn) return;
+    const pkValue = getRowPkValue(rowIndex);
+    if (pkValue === null && pkColumnIndex < 0) return;
+    setDeleteTarget({ type: "row", pkValue });
+  };
+
+  const handleDeleteSelected = () => {
+    if (!pkColumn || !selectedCount) return;
+    setDeleteTarget({
+      type: "selected",
+      pkValues: Object.values(selectedRows),
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!selectedTable || !deleteTarget) return;
+    if (deleteTarget.type !== "clear" && !pkColumn) return;
+
+    setIsDeleting(true);
     try {
-      await deleteTableRow(selectedTable, pkColumn.name, rowToDelete.pkValue);
+      if (deleteTarget.type === "row") {
+        await deleteTableRow(selectedTable, pkColumn!.name, deleteTarget.pkValue);
+      } else if (deleteTarget.type === "selected") {
+        await deleteTableRows(selectedTable, pkColumn!.name, deleteTarget.pkValues);
+      } else {
+        await clearTableData(selectedTable);
+      }
+
       await refreshData();
-      toast({ title: t("common.success"), description: t("data.rowDeleted") });
-      setRowToDelete(null);
+      setSelectedRows({});
+      setDeleteTarget(null);
+      toast({
+        title: t("common.success"),
+        description:
+          deleteTarget.type === "clear" ? "Table cleared" : t("data.rowDeleted"),
+      });
     } catch (e) {
-      toast({ title: t("common.error"), description: String(e), variant: "destructive" });
+      toast({
+        title: t("common.error"),
+        description: String(e),
+        variant: "destructive",
+      });
     } finally {
-      setIsDeletingRow(false);
+      setIsDeleting(false);
     }
   };
 
-  const columns: ColumnDef<unknown[]>[] = useMemo(() => {
-    if (!queryResult) return [];
+  const openContextMenu = (
+    event: ReactMouseEvent,
+    rowIndex: number,
+    colIndex: number
+  ) => {
+    event.preventDefault();
+    setContextMenu({
+      x: Math.min(event.clientX, window.innerWidth - 160),
+      y: Math.min(event.clientY, window.innerHeight - 96),
+      rowIndex,
+      colIndex,
+    });
+  };
 
-    const dataCols: ColumnDef<unknown[]>[] = queryResult.columns.map((col, index) => {
-      const colInfo = tableColumns.find((c) => c.name === col);
-      return {
-        id: col,
-        accessorFn: (row: unknown[]) => row[index],
-        header: () => <ColumnHeader column={col} />,
-        cell: ({ row, getValue }) => {
-          const value = getValue();
-          const rowIndex = row.index;
+  const editContextCell = () => {
+    if (!contextMenu || !pkColumn) return;
+    setEditingCell({
+      rowIndex: contextMenu.rowIndex,
+      colIndex: contextMenu.colIndex,
+    });
+    setContextMenu(null);
+  };
 
-          if (
-            editingCell?.rowIndex === rowIndex &&
-            editingCell?.colIndex === index
-          ) {
-            return (
-              <CellEditor
-                value={value}
-                dataType={colInfo?.data_type ?? "TEXT"}
-                onSave={(newValue) => handleCellSave(rowIndex, index, newValue)}
-                onCancel={() => setEditingCell(null)}
-              />
-            );
-          }
+  const deleteContextRow = () => {
+    if (!contextMenu || !pkColumn) return;
+    handleDeleteRow(contextMenu.rowIndex);
+    setContextMenu(null);
+  };
 
-          return (
-            <div
-              className="cursor-pointer hover:bg-muted/50 px-1 -mx-1 rounded"
-              onDoubleClick={() => handleCellDoubleClick(rowIndex, index)}
-            >
-              {value === null ? (
-                <span className="text-muted-foreground italic">NULL</span>
-              ) : typeof value === "boolean" ? (
-                value ? "true" : "false"
-              ) : (
-                String(value)
-              )}
-            </div>
-          );
-        },
-      };
+  const handleFilterClick = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    column: string
+  ) => {
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const side = resolveFilterPanelSide({
+      triggerRight: rect.right,
+      triggerLeft: rect.left,
+      viewportWidth: window.innerWidth,
     });
 
-    // Add actions column
-    if (pkColumn) {
-      dataCols.push({
-        id: "_actions",
-        header: () => null,
-        cell: ({ row }) => (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 opacity-0 group-hover:opacity-100"
-            onClick={() => handleDeleteRow(row.index)}
-          >
-            <Trash2 className="h-3 w-3 text-destructive" />
-          </Button>
-        ),
-      });
-    }
+    setFilterPanel({
+      column,
+      anchor: {
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+        side,
+      },
+    });
+  };
 
-    return dataCols;
-  }, [queryResult, tableColumns, editingCell, pkColumn]);
+  const startResize = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    column: string
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
 
-  const table = useReactTable({
-    data: queryResult?.rows ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    manualPagination: true,
-    pageCount: Math.ceil((queryResult?.total_count ?? 0) / pageSize),
-  });
+    const startX = event.clientX;
+    const startWidth = columnWidths[column] ?? COLUMN_MIN_WIDTH;
 
-  const totalPages = Math.ceil((queryResult?.total_count ?? 0) / pageSize);
+    const handleMove = (moveEvent: MouseEvent) => {
+      const width = Math.max(
+        COLUMN_MIN_WIDTH,
+        startWidth + moveEvent.clientX - startX
+      );
+      setColumnWidths((previous) => ({ ...previous, [column]: width }));
+    };
+    const handleUp = () => {
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
 
   if (!queryResult) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex flex-1 items-center justify-center">
         <p className="text-muted-foreground">{t("data.loading")}</p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <ScrollArea className="flex-1">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="whitespace-nowrap">
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
-                ))}
-              </TableRow>
+    <div className="flex flex-1 flex-col overflow-hidden bg-background">
+      <div className="flex items-center justify-between gap-3 border-b bg-muted/20 px-2 py-1.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 rounded-sm px-2"
+            onClick={() => setDeleteTarget({ type: "clear" })}
+            disabled={isLoading || queryResult.total_count === 0}
+          >
+            <Eraser className="mr-1.5 h-3.5 w-3.5" />
+            Clear table
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 rounded-sm px-2"
+            onClick={handleDeleteSelected}
+            disabled={!pkColumn || selectedCount === 0 || isLoading}
+            title={!pkColumn ? "No primary key: delete selected is disabled" : undefined}
+          >
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+            Delete selected
+          </Button>
+          {selectedCount > 0 && (
+            <span className="font-mono text-xs text-muted-foreground">
+              {selectedCount} selected
+            </span>
+          )}
+        </div>
+        {!pkColumn && (
+          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+            No primary key: row edit/delete disabled
+          </span>
+        )}
+      </div>
+
+      <div className="sqlite-table-scroll flex-1 overflow-auto">
+        <table
+          className="min-w-full table-fixed border-separate border-spacing-0 text-sm"
+          style={{ minWidth: tableWidth }}
+        >
+          <colgroup>
+            <col style={{ width: SELECT_COLUMN_WIDTH }} />
+            {columns.map((column) => (
+              <col
+                key={column}
+                style={{ width: columnWidths[column] ?? COLUMN_MIN_WIDTH }}
+              />
             ))}
+            <col style={{ width: ACTION_COLUMN_WIDTH }} />
+          </colgroup>
+          <TableHeader className="sticky top-0 z-20 bg-background">
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="sticky left-0 z-30 h-9 border-b border-r bg-background p-0 text-center">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  disabled={!pkColumn || rows.length === 0}
+                  onChange={toggleAllVisibleRows}
+                  aria-checked={hasVisibleSelection && !allVisibleSelected ? "mixed" : allVisibleSelected}
+                  className="h-4 w-4 accent-primary disabled:opacity-40"
+                />
+              </TableHead>
+              {columns.map((column) => (
+                <TableHead
+                  key={column}
+                  className="h-9 border-b border-r bg-background p-0"
+                  style={{
+                    minWidth: COLUMN_MIN_WIDTH,
+                    width: columnWidths[column] ?? COLUMN_MIN_WIDTH,
+                  }}
+                >
+                  <ColumnHeader
+                    column={column}
+                    filtered={filters.some((filter) => filter.column === column)}
+                    onFilterClick={(event) => handleFilterClick(event, column)}
+                    onResizeStart={(event) => startResize(event, column)}
+                  />
+                </TableHead>
+              ))}
+              <TableHead className="h-9 border-b bg-background p-0" />
+            </TableRow>
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} className="group">
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="whitespace-nowrap">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
-                  {t("data.noData")}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-        <ScrollBar orientation="horizontal" />
-      </ScrollArea>
+            {rows.map((row, rowIndex) => {
+              const pkValue = getRowPkValue(rowIndex);
+              const selected =
+                pkColumn && pkValue !== null
+                  ? selectedRows[rowSelectionKey(pkValue)] !== undefined
+                  : false;
 
-      {/* Pagination */}
-      <div className="border-t p-2 flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          {t("data.rowsTotal", { count: queryResult.total_count })}
+              return (
+                <TableRow
+                  key={`${rowIndex}-${pkValue ?? "row"}`}
+                  data-state={selected ? "selected" : undefined}
+                  className="group hover:bg-muted/40"
+                  onContextMenu={(event) => openContextMenu(event, rowIndex, 0)}
+                >
+                  <TableCell className="sticky left-0 z-10 border-b border-r bg-background p-0 text-center group-hover:bg-muted/40">
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      disabled={!pkColumn}
+                      onChange={() => toggleRowSelection(rowIndex)}
+                      onClick={(event) => event.stopPropagation()}
+                      className="h-4 w-4 accent-primary disabled:opacity-40"
+                    />
+                  </TableCell>
+                  {columns.map((column, colIndex) => {
+                    const value = normalizeCellValue(row[colIndex]);
+                    const colInfo = tableColumns.find((item) => item.name === column);
+                    const editing =
+                      editingCell?.rowIndex === rowIndex &&
+                      editingCell?.colIndex === colIndex;
+
+                    return (
+                      <TableCell
+                        key={column}
+                        className="h-8 border-b border-r px-2 py-1 align-middle"
+                        style={{
+                          minWidth: COLUMN_MIN_WIDTH,
+                          width: columnWidths[column] ?? COLUMN_MIN_WIDTH,
+                          maxWidth: columnWidths[column] ?? COLUMN_MIN_WIDTH,
+                        }}
+                        onContextMenu={(event) =>
+                          openContextMenu(event, rowIndex, colIndex)
+                        }
+                      >
+                        {editing ? (
+                          <CellEditor
+                            value={value}
+                            dataType={colInfo?.data_type ?? "TEXT"}
+                            onSave={(newValue) =>
+                              handleCellSave(rowIndex, colIndex, newValue)
+                            }
+                            onCancel={() => setEditingCell(null)}
+                          />
+                        ) : (
+                          <div
+                            className={cn(
+                              "min-w-0 cursor-cell truncate rounded-sm px-1 py-0.5 font-mono text-xs hover:bg-muted",
+                              value === null && "italic text-muted-foreground"
+                            )}
+                            title={formatCellValue(value)}
+                            onDoubleClick={() =>
+                              handleCellDoubleClick(rowIndex, colIndex)
+                            }
+                          >
+                            {formatCellValue(value)}
+                          </div>
+                        )}
+                      </TableCell>
+                    );
+                  })}
+                  <TableCell className="border-b p-0 text-center">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 rounded-sm opacity-0 group-hover:opacity-100"
+                      onClick={() => handleDeleteRow(rowIndex)}
+                      disabled={!pkColumn}
+                      title={!pkColumn ? "No primary key" : "Delete row"}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </table>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 border-t bg-muted/10 px-2 py-1.5">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">
+            {t("data.rowsTotal", { count: queryResult.total_count })}
+          </span>
+          <select
+            value={String(pageSize)}
+            onChange={(event) => setPageSize(parsePageSize(event.target.value))}
+            className="h-8 rounded-sm border border-input bg-background px-2 font-mono text-xs outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="500">500</option>
+            <option value="1000">1000</option>
+            <option value="all">All</option>
+          </select>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">
             {t("data.pageOf", {
-              page: currentPage + 1,
-              total: totalPages || 1,
+              page: pageSize === "all" ? 1 : currentPage + 1,
+              total: totalPages,
             })}
           </span>
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-8 w-8 rounded-sm"
               onClick={() => setPage(0)}
-              disabled={currentPage === 0 || isLoading}
+              disabled={currentPage === 0 || isLoading || pageSize === "all"}
             >
               <ChevronsLeft className="h-4 w-4" />
             </Button>
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-8 w-8 rounded-sm"
               onClick={() => setPage(currentPage - 1)}
-              disabled={currentPage === 0 || isLoading}
+              disabled={currentPage === 0 || isLoading || pageSize === "all"}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-8 w-8 rounded-sm"
               onClick={() => setPage(currentPage + 1)}
-              disabled={currentPage >= totalPages - 1 || isLoading}
+              disabled={
+                currentPage >= totalPages - 1 || isLoading || pageSize === "all"
+              }
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-8 w-8 rounded-sm"
               onClick={() => setPage(totalPages - 1)}
-              disabled={currentPage >= totalPages - 1 || isLoading}
+              disabled={
+                currentPage >= totalPages - 1 || isLoading || pageSize === "all"
+              }
             >
               <ChevronsRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
       </div>
+
+      {contextMenu && (
+        <div
+          className="fixed z-50 w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-lg"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+            onClick={editContextCell}
+            disabled={!pkColumn}
+          >
+            <Edit3 className="h-3.5 w-3.5" />
+            Modify
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-destructive hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
+            onClick={deleteContextRow}
+            disabled={!pkColumn}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
+          </button>
+        </div>
+      )}
+
+      {filterPanel && (
+        <ColumnFilterPopover
+          column={filterPanel.column}
+          anchor={filterPanel.anchor}
+          onClose={() => setFilterPanel(null)}
+        />
+      )}
+
       <DeleteConfirmDialog
-        open={rowToDelete !== null}
+        open={deleteTarget !== null}
         onOpenChange={(open) => {
-          if (!open) setRowToDelete(null);
+          if (!open) setDeleteTarget(null);
         }}
-        title={t("common.delete")}
-        description={t("data.deleteRowConfirm")}
-        onConfirm={confirmDeleteRow}
-        isLoading={isDeletingRow}
+        title={getDeleteTitle(deleteTarget)}
+        description={getDeleteDescription(deleteTarget, selectedTable)}
+        onConfirm={confirmDelete}
+        isLoading={isDeleting}
       />
     </div>
   );
+}
+
+function parsePageSize(value: string): PageSize {
+  if (value === "all") return "all";
+  return Number(value) as PageSize;
+}
+
+function rowSelectionKey(value: CellValue) {
+  return JSON.stringify(value);
+}
+
+function getDeleteTitle(target: DeleteTarget | null) {
+  if (target?.type === "clear") return "Clear table";
+  if (target?.type === "selected") return "Delete selected rows";
+  return "Delete row";
+}
+
+function getDeleteDescription(target: DeleteTarget | null, table: string | null) {
+  if (target?.type === "clear") {
+    return `Delete all rows from "${table ?? ""}"? This action cannot be undone.`;
+  }
+  if (target?.type === "selected") {
+    return `Delete ${target.pkValues.length} selected row(s)? This action cannot be undone.`;
+  }
+  return "Are you sure you want to delete this row?";
 }

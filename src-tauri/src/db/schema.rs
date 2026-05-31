@@ -77,9 +77,15 @@ pub struct CreateColumnDef {
     pub pk: bool,
 }
 
-pub fn create_table(conn: &Connection, table_name: &str, columns: &[CreateColumnDef]) -> AppResult<()> {
+pub fn create_table(
+    conn: &Connection,
+    table_name: &str,
+    columns: &[CreateColumnDef],
+) -> AppResult<()> {
     if columns.is_empty() {
-        return Err(crate::error::AppError::InvalidSql("At least one column is required".to_string()));
+        return Err(crate::error::AppError::InvalidSql(
+            "At least one column is required".to_string(),
+        ));
     }
 
     let column_defs: Vec<String> = columns
@@ -128,7 +134,7 @@ pub fn add_column(conn: &Connection, table_name: &str, column: &CreateColumnDef)
             def.push_str(&format!(" NOT NULL DEFAULT {}", default));
         } else {
             return Err(crate::error::AppError::InvalidSql(
-                "NOT NULL column requires a default value".to_string()
+                "NOT NULL column requires a default value".to_string(),
             ));
         }
     }
@@ -144,7 +150,10 @@ pub fn add_column(conn: &Connection, table_name: &str, column: &CreateColumnDef)
 }
 
 pub fn drop_column(conn: &Connection, table_name: &str, column_name: &str) -> AppResult<()> {
-    let sql = format!("ALTER TABLE \"{}\" DROP COLUMN \"{}\"", table_name, column_name);
+    let sql = format!(
+        "ALTER TABLE \"{}\" DROP COLUMN \"{}\"",
+        table_name, column_name
+    );
     conn.execute(&sql, [])?;
     Ok(())
 }

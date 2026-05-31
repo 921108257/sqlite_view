@@ -1,8 +1,8 @@
 use tauri::State;
 
 use crate::db::schema::{
-    add_column, create_table, drop_column, drop_table, get_table_columns, get_tables,
-    rename_table, ColumnInfo, CreateColumnDef, TableInfo,
+    add_column, create_table, drop_column, drop_table, get_table_columns, get_tables, rename_table,
+    ColumnInfo, CreateColumnDef, TableInfo,
 };
 use crate::db::DbManager;
 use crate::error::AppResult;
@@ -50,10 +50,6 @@ pub fn add_table_column(
 }
 
 #[tauri::command]
-pub fn drop_table_column(
-    table: String,
-    column: String,
-    db: State<DbManager>,
-) -> AppResult<()> {
+pub fn drop_table_column(table: String, column: String, db: State<DbManager>) -> AppResult<()> {
     db.with_connection(|conn| drop_column(conn, &table, &column))
 }

@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import type { TableInfo, ColumnInfo, QueryResult } from "@/types/database";
+import type {
+  ColumnInfo,
+  PageSize,
+  QueryFilter,
+  QueryResult,
+  TableInfo,
+} from "@/types/database";
 import * as commands from "@/tauri/commands";
 
 interface DatabaseState {
@@ -15,9 +21,10 @@ interface DatabaseState {
   // Data state
   queryResult: QueryResult | null;
   currentPage: number;
-  pageSize: number;
+  pageSize: PageSize;
   orderBy: string | null;
   orderDir: "ASC" | "DESC";
+  filters: QueryFilter[];
 
   // Loading states
   isLoading: boolean;
@@ -30,8 +37,11 @@ interface DatabaseState {
   selectTable: (tableName: string | null) => Promise<void>;
   refreshData: () => Promise<void>;
   setPage: (page: number) => void;
-  setPageSize: (size: number) => void;
+  setPageSize: (size: PageSize) => void;
   setOrderBy: (column: string | null, dir?: "ASC" | "DESC") => void;
+  setColumnFilter: (filter: QueryFilter) => void;
+  clearColumnFilter: (column: string) => void;
+  clearFilters: () => void;
   clearError: () => void;
 }
 
@@ -47,6 +57,7 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
   pageSize: 50,
   orderBy: null,
   orderDir: "ASC",
+  filters: [],
   isLoading: false,
   error: null,
 
@@ -75,6 +86,7 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
         tableColumns: [],
         queryResult: null,
         currentPage: 0,
+        filters: [],
       });
     } catch (e) {
       set({ error: String(e) });
@@ -104,6 +116,7 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
       currentPage: 0,
       orderBy: null,
       orderDir: "ASC",
+      filters: [],
     });
 
     if (!tableName) return;
@@ -121,17 +134,19 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
   },
 
   refreshData: async () => {
-    const { selectedTable, currentPage, pageSize, orderBy, orderDir } = get();
+    const { selectedTable, currentPage, pageSize, orderBy, orderDir, filters } = get();
     if (!selectedTable) return;
 
     set({ isLoading: true, error: null });
     try {
+      const paged = pageSize !== "all";
       const result = await commands.queryTableData({
         table: selectedTable,
-        limit: pageSize,
-        offset: currentPage * pageSize,
+        limit: paged ? pageSize : undefined,
+        offset: paged ? currentPage * pageSize : undefined,
         order_by: orderBy ?? undefined,
-        order_dir: orderDir,
+        order_dir: orderBy ? orderDir : undefined,
+        filters: filters.length ? filters : undefined,
       });
       set({ queryResult: result });
     } catch (e) {
@@ -146,7 +161,7 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
     get().refreshData();
   },
 
-  setPageSize: (size: number) => {
+  setPageSize: (size: PageSize) => {
     set({ pageSize: size, currentPage: 0 });
     get().refreshData();
   },
@@ -154,10 +169,39 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
   setOrderBy: (column: string | null, dir: "ASC" | "DESC" = "ASC") => {
     const { orderBy, orderDir } = get();
     if (column === orderBy) {
-      set({ orderDir: orderDir === "ASC" ? "DESC" : "ASC" });
+      if (orderDir === "ASC") {
+        set({ orderDir: "DESC", currentPage: 0 });
+      } else {
+        set({ orderBy: null, orderDir: "ASC", currentPage: 0 });
+      }
     } else {
-      set({ orderBy: column, orderDir: dir });
+      set({ orderBy: column, orderDir: dir, currentPage: 0 });
     }
+    get().refreshData();
+  },
+
+  setColumnFilter: (filter: QueryFilter) => {
+    const filters = get().filters.filter((item) => item.column !== filter.column);
+    const hasSearch = Boolean(filter.search?.trim());
+    const hasValues = Boolean(filter.values?.length);
+
+    set({
+      filters: hasSearch || hasValues ? [...filters, filter] : filters,
+      currentPage: 0,
+    });
+    get().refreshData();
+  },
+
+  clearColumnFilter: (column: string) => {
+    set({
+      filters: get().filters.filter((filter) => filter.column !== column),
+      currentPage: 0,
+    });
+    get().refreshData();
+  },
+
+  clearFilters: () => {
+    set({ filters: [], currentPage: 0 });
     get().refreshData();
   },
 

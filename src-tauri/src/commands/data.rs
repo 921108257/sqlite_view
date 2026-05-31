@@ -1,13 +1,26 @@
 use serde_json::{Map, Value as JsonValue};
 use tauri::State;
 
-use crate::db::query::{delete_row, insert_row, query_table, update_row, QueryParams, QueryResult};
+use crate::db::query::{
+    clear_table, delete_row, delete_rows, get_column_values, insert_row, query_table, update_row,
+    QueryFilter, QueryParams, QueryResult,
+};
 use crate::db::DbManager;
 use crate::error::AppResult;
 
 #[tauri::command]
 pub fn query_table_data(params: QueryParams, db: State<DbManager>) -> AppResult<QueryResult> {
     db.with_connection(|conn| query_table(conn, &params))
+}
+
+#[tauri::command]
+pub fn get_table_column_values(
+    table: String,
+    column: String,
+    filters: Option<Vec<QueryFilter>>,
+    db: State<DbManager>,
+) -> AppResult<Vec<JsonValue>> {
+    db.with_connection(|conn| get_column_values(conn, &table, &column, filters.as_deref()))
 }
 
 #[tauri::command]
@@ -38,4 +51,19 @@ pub fn delete_table_row(
     db: State<DbManager>,
 ) -> AppResult<usize> {
     db.with_connection(|conn| delete_row(conn, &table, &pk_column, &pk_value))
+}
+
+#[tauri::command]
+pub fn delete_table_rows(
+    table: String,
+    pk_column: String,
+    pk_values: Vec<JsonValue>,
+    db: State<DbManager>,
+) -> AppResult<usize> {
+    db.with_connection(|conn| delete_rows(conn, &table, &pk_column, &pk_values))
+}
+
+#[tauri::command]
+pub fn clear_table_data(table: String, db: State<DbManager>) -> AppResult<usize> {
+    db.with_connection(|conn| clear_table(conn, &table))
 }

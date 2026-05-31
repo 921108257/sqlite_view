@@ -18,6 +18,13 @@ export interface QueryParams {
   offset?: number;
   order_by?: string;
   order_dir?: "ASC" | "DESC";
+  filters?: QueryFilter[];
+}
+
+export interface QueryFilter {
+  column: string;
+  search?: string;
+  values?: CellValue[];
 }
 
 export interface QueryResult {
@@ -35,6 +42,8 @@ export interface CreateColumnDef {
 }
 
 export type CellValue = string | number | boolean | null;
+
+export type PageSize = 50 | 100 | 500 | 1000 | "all";
 
 export interface RowData {
   [key: string]: CellValue;

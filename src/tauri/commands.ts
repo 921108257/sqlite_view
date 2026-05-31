@@ -6,6 +6,8 @@ import type {
   QueryResult,
   CreateColumnDef,
   RowData,
+  QueryFilter,
+  CellValue,
 } from "@/types/database";
 
 // File commands
@@ -71,6 +73,14 @@ export async function queryTableData(params: QueryParams): Promise<QueryResult> 
   return invoke("query_table_data", { params });
 }
 
+export async function getTableColumnValues(
+  table: string,
+  column: string,
+  filters?: QueryFilter[]
+): Promise<CellValue[]> {
+  return invoke("get_table_column_values", { table, column, filters });
+}
+
 export async function insertTableRow(
   table: string,
   data: RowData
@@ -93,4 +103,16 @@ export async function deleteTableRow(
   pkValue: unknown
 ): Promise<number> {
   return invoke("delete_table_row", { table, pkColumn, pkValue });
+}
+
+export async function deleteTableRows(
+  table: string,
+  pkColumn: string,
+  pkValues: unknown[]
+): Promise<number> {
+  return invoke("delete_table_rows", { table, pkColumn, pkValues });
+}
+
+export async function clearTableData(table: string): Promise<number> {
+  return invoke("clear_table_data", { table });
 }

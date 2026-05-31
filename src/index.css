@@ -58,3 +58,33 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+@layer utilities {
+  .sqlite-table-scroll {
+    scrollbar-color: hsl(var(--border)) transparent;
+    scrollbar-width: thin;
+  }
+
+  .sqlite-table-scroll::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .sqlite-table-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sqlite-table-scroll::-webkit-scrollbar-thumb {
+    border: 2px solid hsl(var(--background));
+    border-radius: 999px;
+    background: hsl(var(--muted-foreground) / 0.45);
+  }
+
+  .sqlite-table-scroll::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.65);
+  }
+
+  .sqlite-table-scroll::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
