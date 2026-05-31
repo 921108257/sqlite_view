@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -14,38 +14,151 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Trash2,
+} from "lucide-react";
 import { useDatabaseStore } from "@/stores/database-store";
 import { ColumnHeader } from "./column-header";
+import { CellEditor } from "./cell-editor";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { updateTableRow, deleteTableRow } from "@/tauri/commands";
+import { useToast } from "@/hooks/use-toast";
+import type { RowData, CellValue } from "@/types/database";
 
 export function DataTable() {
   const {
     queryResult,
+    tableColumns,
+    selectedTable,
     currentPage,
     pageSize,
     setPage,
+    refreshData,
     isLoading,
   } = useDatabaseStore();
+  const { toast } = useToast();
+
+  const [editingCell, setEditingCell] = useState<{
+    rowIndex: number;
+    colIndex: number;
+  } | null>(null);
+
+  const pkColumn = tableColumns.find((c) => c.pk);
+
+  const handleCellDoubleClick = (rowIndex: number, colIndex: number) => {
+    setEditingCell({ rowIndex, colIndex });
+  };
+
+  const handleCellSave = async (
+    rowIndex: number,
+    colIndex: number,
+    newValue: unknown
+  ) => {
+    if (!selectedTable || !pkColumn || !queryResult) return;
+
+    const row = queryResult.rows[rowIndex];
+    const pkColIndex = queryResult.columns.indexOf(pkColumn.name);
+    const pkValue = row[pkColIndex];
+    const columnName = queryResult.columns[colIndex];
+
+    try {
+      const data: RowData = { [columnName]: newValue as CellValue };
+      await updateTableRow(selectedTable, data, pkColumn.name, pkValue);
+      await refreshData();
+      toast({ title: "Success", description: "Cell updated" });
+    } catch (e) {
+      toast({ title: "Error", description: String(e), variant: "destructive" });
+    }
+    setEditingCell(null);
+  };
+
+  const handleDeleteRow = async (rowIndex: number) => {
+    if (!selectedTable || !pkColumn || !queryResult) return;
+
+    const row = queryResult.rows[rowIndex];
+    const pkColIndex = queryResult.columns.indexOf(pkColumn.name);
+    const pkValue = row[pkColIndex];
+
+    if (!confirm("Are you sure you want to delete this row?")) return;
+
+    try {
+      await deleteTableRow(selectedTable, pkColumn.name, pkValue);
+      await refreshData();
+      toast({ title: "Success", description: "Row deleted" });
+    } catch (e) {
+      toast({ title: "Error", description: String(e), variant: "destructive" });
+    }
+  };
 
   const columns: ColumnDef<unknown[]>[] = useMemo(() => {
     if (!queryResult) return [];
-    return queryResult.columns.map((col, index) => ({
-      id: col,
-      accessorFn: (row: unknown[]) => row[index],
-      header: () => <ColumnHeader column={col} />,
-      cell: ({ getValue }) => {
-        const value = getValue();
-        if (value === null) {
-          return <span className="text-muted-foreground italic">NULL</span>;
-        }
-        if (typeof value === "boolean") {
-          return value ? "true" : "false";
-        }
-        return String(value);
-      },
-    }));
-  }, [queryResult]);
+
+    const dataCols: ColumnDef<unknown[]>[] = queryResult.columns.map((col, index) => {
+      const colInfo = tableColumns.find((c) => c.name === col);
+      return {
+        id: col,
+        accessorFn: (row: unknown[]) => row[index],
+        header: () => <ColumnHeader column={col} />,
+        cell: ({ row, getValue }) => {
+          const value = getValue();
+          const rowIndex = row.index;
+
+          if (
+            editingCell?.rowIndex === rowIndex &&
+            editingCell?.colIndex === index
+          ) {
+            return (
+              <CellEditor
+                value={value}
+                dataType={colInfo?.data_type ?? "TEXT"}
+                onSave={(newValue) => handleCellSave(rowIndex, index, newValue)}
+                onCancel={() => setEditingCell(null)}
+              />
+            );
+          }
+
+          return (
+            <div
+              className="cursor-pointer hover:bg-muted/50 px-1 -mx-1 rounded"
+              onDoubleClick={() => handleCellDoubleClick(rowIndex, index)}
+            >
+              {value === null ? (
+                <span className="text-muted-foreground italic">NULL</span>
+              ) : typeof value === "boolean" ? (
+                value ? "true" : "false"
+              ) : (
+                String(value)
+              )}
+            </div>
+          );
+        },
+      };
+    });
+
+    // Add actions column
+    if (pkColumn) {
+      dataCols.push({
+        id: "_actions",
+        header: () => null,
+        cell: ({ row }) => (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 opacity-0 group-hover:opacity-100"
+            onClick={() => handleDeleteRow(row.index)}
+          >
+            <Trash2 className="h-3 w-3 text-destructive" />
+          </Button>
+        ),
+      });
+    }
+
+    return dataCols;
+  }, [queryResult, tableColumns, editingCell, pkColumn]);
 
   const table = useReactTable({
     data: queryResult?.rows ?? [],
@@ -85,7 +198,7 @@ export function DataTable() {
           <TableBody>
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow key={row.id} className="group">
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="whitespace-nowrap">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
