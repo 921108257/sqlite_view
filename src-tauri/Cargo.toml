@@ -26,4 +26,4 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 thiserror = "1"
 parking_lot = "0.12"
 tauri-plugin-dialog = "2"
-
+tauri-plugin-cli = "2"

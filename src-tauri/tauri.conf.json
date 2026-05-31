@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "sqlite-view",
-  "version": "0.1.0",
-  "identifier": "com.sqlite-view.app",
+  "productName": "SQLite View",
+  "version": "1.0.0",
+  "identifier": "com.sqliteview.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -10,15 +10,33 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "withGlobalTauri": false,
     "windows": [
       {
         "title": "SQLite View",
-        "width": 800,
-        "height": 600
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "dragDropEnabled": true
       }
     ],
     "security": {
       "csp": null
+    }
+  },
+  "plugins": {
+    "cli": {
+      "args": [
+        {
+          "name": "file",
+          "index": 1,
+          "takesValue": true,
+          "multiple": false
+        }
+      ]
     }
   },
   "bundle": {
@@ -30,6 +48,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["db", "sqlite", "sqlite3", "db3"],
+        "name": "SQLite Database",
+        "description": "SQLite Database File",
+        "role": "Viewer"
+      }
     ]
   }
 }
