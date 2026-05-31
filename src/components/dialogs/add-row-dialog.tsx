@@ -8,12 +8,14 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { insertTableRow } from "@/tauri/commands";
 import { useDatabaseStore } from "@/stores/database-store";
 import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
-import type { RowData } from "@/types/database";
+import { cn } from "@/lib/utils";
+import type { CellValue, ColumnInfo, RowData } from "@/types/database";
 
 interface AddRowDialogProps {
   open: boolean;
@@ -61,47 +63,84 @@ export function AddRowDialog({ open, onOpenChange }: AddRowDialogProps) {
     }
   };
 
+  const updateValue = (col: ColumnInfo, rawValue: string) => {
+    let value: CellValue | "" = rawValue;
+
+    if (col.data_type === "INTEGER") {
+      value = rawValue ? parseInt(rawValue, 10) : "";
+    } else if (col.data_type === "REAL") {
+      value = rawValue ? parseFloat(rawValue) : "";
+    }
+
+    setFormData({ ...formData, [col.name]: value });
+  };
+
   const nonPkColumns = tableColumns.filter((col) => !col.pk);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{t("addRow.title")}</DialogTitle>
+      <DialogContent className="max-w-3xl max-h-[82vh] overflow-hidden p-0 gap-0">
+        <DialogHeader className="border-b bg-muted/20 px-5 py-4">
+          <DialogTitle className="text-base">{t("addRow.title")}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
-          {nonPkColumns.map((col) => (
-            <div key={col.name}>
-              <label className="text-sm font-medium">
-                {col.name}
-                <span className="text-muted-foreground ml-1">({col.data_type})</span>
-                {col.notnull && <span className="text-destructive ml-1">*</span>}
-              </label>
-              {col.data_type === "TEXT" ? (
-                <Textarea
-                  value={String(formData[col.name] ?? "")}
-                  onChange={(e) => setFormData({ ...formData, [col.name]: e.target.value })}
-                  className="mt-1"
-                  rows={2}
-                />
-              ) : (
-                <Input
-                  type={col.data_type === "INTEGER" || col.data_type === "REAL" ? "number" : "text"}
-                  value={String(formData[col.name] ?? "")}
-                  onChange={(e) => {
-                    const val = col.data_type === "INTEGER"
-                      ? (e.target.value ? parseInt(e.target.value) : "")
-                      : col.data_type === "REAL"
-                      ? (e.target.value ? parseFloat(e.target.value) : "")
-                      : e.target.value;
-                    setFormData({ ...formData, [col.name]: val });
-                  }}
-                  className="mt-1"
-                />
-              )}
-            </div>
-          ))}
-        </div>
-        <DialogFooter>
+        <ScrollArea className="max-h-[calc(82vh-128px)]">
+          <div className="divide-y divide-border/70">
+            {nonPkColumns.map((col) => {
+              const value = String(formData[col.name] ?? "");
+              const multiline = shouldUseMultilineEditor(col, value);
+
+              return (
+                <div
+                  key={col.name}
+                  className="grid gap-3 px-5 py-3 transition-colors hover:bg-muted/20 md:grid-cols-[minmax(160px,220px)_1fr]"
+                >
+                  <div className="min-w-0 pt-1">
+                    <label
+                      className="block truncate text-sm font-medium"
+                      htmlFor={`add-row-${col.name}`}
+                      title={col.name}
+                    >
+                      {col.name}
+                    </label>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <span className="rounded-sm border border-border/80 bg-muted/30 px-1.5 py-0.5 font-mono text-[11px] uppercase text-muted-foreground">
+                        {col.data_type}
+                      </span>
+                      {col.notnull && (
+                        <span className="rounded-sm border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 font-mono text-[11px] font-medium text-destructive">
+                          NOT NULL
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {multiline ? (
+                    <Textarea
+                      id={`add-row-${col.name}`}
+                      value={value}
+                      onChange={(event) => updateValue(col, event.target.value)}
+                      spellCheck={false}
+                      className="min-h-[92px] resize-y rounded-sm border-0 bg-background/70 px-3 py-2 font-mono text-[13px] shadow-none ring-1 ring-border/80 focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-0"
+                    />
+                  ) : (
+                    <Input
+                      id={`add-row-${col.name}`}
+                      type="text"
+                      inputMode={inputModeForColumn(col)}
+                      value={value}
+                      onChange={(event) => updateValue(col, event.target.value)}
+                      spellCheck={false}
+                      className={cn(
+                        "h-9 rounded-sm border-0 bg-background/70 px-3 font-mono text-[13px] shadow-none ring-1 ring-border/80 focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-0",
+                        isNumericColumn(col) && "text-right tabular-nums"
+                      )}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </ScrollArea>
+        <DialogFooter className="border-t bg-muted/20 px-5 py-3">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t("common.cancel")}
           </Button>
@@ -111,5 +150,28 @@ export function AddRowDialog({ open, onOpenChange }: AddRowDialogProps) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function isNumericColumn(col: ColumnInfo) {
+  return col.data_type === "INTEGER" || col.data_type === "REAL";
+}
+
+function inputModeForColumn(col: ColumnInfo) {
+  if (col.data_type === "INTEGER") return "numeric";
+  if (col.data_type === "REAL") return "decimal";
+  return "text";
+}
+
+function shouldUseMultilineEditor(col: ColumnInfo, value: string) {
+  const name = col.name.toLowerCase();
+  const type = col.data_type.toUpperCase();
+
+  return (
+    type === "BLOB" ||
+    name.includes("json") ||
+    name.includes("sql") ||
+    name.includes("payload") ||
+    value.length > 120
   );
 }
