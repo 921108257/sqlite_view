@@ -16,7 +16,7 @@ A modern, cross-platform SQLite database viewer built with Tauri, React, and Typ
 
 ### Download
 
-Download the latest release for your platform from the [Releases](https://github.com/yourusername/sqlite-view/releases) page.
+Download the latest release for your platform from the [Releases](https://github.com/921108257/sqlite-view/releases) page.
 
 ### Build from Source
 
@@ -27,7 +27,7 @@ Prerequisites:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/sqlite-view.git
+git clone https://github.com/921108257/sqlite-view.git
 cd sqlite-view
 
 # Install dependencies

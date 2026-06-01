@@ -1,6 +1,6 @@
 [package]
 name = "sqlite-view"
-version = "0.1.0"
+version = "1.0.0"
 description = "Modern SQLite viewing applications."
 authors = ["成都新岚科技有限公司"]
 edition = "2021"
