@@ -14,6 +14,10 @@ dist-ssr
 .codegraph
 .cursor
 
+# Python bytecode (scripts/generate-icons.sh loads generate-icon.py)
+__pycache__/
+*.py[cod]
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
