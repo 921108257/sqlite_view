@@ -73,6 +73,16 @@ export function applyThemeClass(theme: ResolvedTheme) {
   document.documentElement.classList.toggle("dark", theme === "dark");
 }
 
+/**
+ * Keep `<html lang>` in sync with the resolved UI language. The markup ships
+ * `lang="en"`, which is wrong for every other locale and affects screen-reader
+ * pronunciation and hyphenation.
+ */
+export function applyLanguageAttribute(language: ResolvedLanguage) {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = language;
+}
+
 function systemPrefersDark() {
   if (typeof window === "undefined" || !window.matchMedia) {
     return false;

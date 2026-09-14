@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="/icon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#020817" media="(prefers-color-scheme: dark)" />
     <title>SQLite View</title>
     <script>
       (function () {
@@ -72,6 +74,13 @@
       @keyframes sqlite-view-boot-spin {
         to {
           transform: rotate(360deg);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #root:empty::after {
+          animation: none;
+          border-top-color: var(--boot-muted);
         }
       }
     </style>

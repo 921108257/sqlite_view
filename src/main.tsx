@@ -3,13 +3,16 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import {
+  applyLanguageAttribute,
   applyThemeClass,
   initializeSettings,
   useSettingsStore,
 } from "@/stores/settings-store";
 
 initializeSettings();
-applyThemeClass(useSettingsStore.getState().resolvedTheme);
+const initialSettings = useSettingsStore.getState();
+applyThemeClass(initialSettings.resolvedTheme);
+applyLanguageAttribute(initialSettings.resolvedLanguage);
 document.addEventListener(
   "contextmenu",
   (event) => {
