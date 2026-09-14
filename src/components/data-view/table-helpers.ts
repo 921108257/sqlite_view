@@ -27,21 +27,6 @@ export function resolveFilterPanelSide({
   return triggerLeft >= panelWidth + margin ? "left" : "right";
 }
 
-export function uniqueCellValues(rows: unknown[][], columnIndex: number) {
-  const values: CellValue[] = [];
-  const seen = new Set<string>();
-
-  for (const row of rows) {
-    const value = normalizeCellValue(row[columnIndex]);
-    const key = JSON.stringify(value);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    values.push(value);
-  }
-
-  return values;
-}
-
 export function getVirtualRowWindow({
   rowCount,
   scrollTop,

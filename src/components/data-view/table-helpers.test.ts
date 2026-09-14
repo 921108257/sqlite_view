@@ -4,7 +4,6 @@ import {
   getTotalPages,
   getVirtualRowWindow,
   resolveFilterPanelSide,
-  uniqueCellValues,
 } from "./table-helpers";
 
 describe("data table helpers", () => {
@@ -24,17 +23,6 @@ describe("data table helpers", () => {
     expect(resolveFilterPanelSide({ triggerRight: 760, triggerLeft: 720, viewportWidth: 900 })).toBe(
       "left"
     );
-  });
-
-  it("returns stable unique values from a column", () => {
-    expect(
-      uniqueCellValues([
-        ["active", 1],
-        ["blocked", 2],
-        ["active", 3],
-        [null, 4],
-      ], 0)
-    ).toEqual(["active", "blocked", null]);
   });
 
   it("windows large row sets to the visible range plus overscan", () => {

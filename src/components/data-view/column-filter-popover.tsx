@@ -47,22 +47,63 @@ export function ColumnFilterPopover({
     () => new Set((currentFilter?.values ?? []).map(valueKey))
   );
   const [values, setValues] = useState<CellValue[]>(currentFilter?.values ?? []);
+  const [truncated, setTruncated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
+    // Remember the trigger so focus can be returned on close (APG dialog pattern).
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+
+    const focusables = () =>
+      Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>(
+          'input, button, select, textarea, a[href], [tabindex]:not([tabindex="-1"])'
+        ) ?? []
+      ).filter((element) => !element.hasAttribute("disabled"));
+
     const handlePointerDown = (event: MouseEvent) => {
       if (panelRef.current?.contains(event.target as Node)) return;
       onClose();
     };
+
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+      const items = focusables();
+      if (items.length === 0) return;
+
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+
+      // Wrap focus inside the panel rather than letting Tab reach the grid.
+      if (!panelRef.current?.contains(active)) {
+        event.preventDefault();
+        first.focus();
+        return;
+      }
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
+    focusables()[0]?.focus();
+
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus?.();
     };
   }, [onClose]);
 
@@ -78,9 +119,10 @@ export function ColumnFilterPopover({
       column,
       otherFilters.length ? otherFilters : undefined
     )
-      .then((nextValues) => {
+      .then((result) => {
         if (!active) return;
-        setValues(mergeValues(nextValues, currentFilter?.values ?? []));
+        setValues(mergeValues(result.values, currentFilter?.values ?? []));
+        setTruncated(result.truncated);
       })
       .catch((error) => {
         if (!active) return;
@@ -155,35 +197,50 @@ export function ColumnFilterPopover({
   return (
     <div
       ref={panelRef}
+      role="dialog"
+      aria-label={t("data.filterColumn", { column })}
       className="fixed z-50 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-xl"
       style={{ left, top, width: FILTER_PANEL_WIDTH }}
     >
       <div className="border-b bg-muted/30 p-2">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+            />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={t("data.likeSearch")}
+              aria-label={t("data.filterColumn", { column })}
               spellCheck={false}
+              autoComplete="off"
+              name={`filter-${column}`}
               className="h-8 rounded-sm border-0 bg-background pl-7 pr-2 font-mono text-xs shadow-none ring-1 ring-border/80 focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-0"
             />
           </div>
-          <Button size="sm" className="h-8 rounded-sm px-2" onClick={applyFilter}>
-            <Check className="h-3.5 w-3.5" />
+          <Button size="sm" className="h-8 rounded-sm px-2" onClick={applyFilter}
+            aria-label={t("data.applyFilter")}>
+            <Check aria-hidden="true" className="h-3.5 w-3.5" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
             className="h-8 w-8 rounded-sm"
             onClick={clearFilter}
-            title={t("data.clearFilter")}
+            aria-label={t("data.clearFilter")}
           >
-            <X className="h-3.5 w-3.5" />
+            <X aria-hidden="true" className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
+
+      {truncated && !isLoading && (
+        <p className="border-b bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground">
+          {t("data.filterValuesTruncated")}
+        </p>
+      )}
 
       <ScrollArea className="h-64">
         <div className="p-1">
