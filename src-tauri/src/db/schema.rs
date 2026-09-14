@@ -59,15 +59,6 @@ pub fn get_table_columns(conn: &Connection, table_name: &str) -> AppResult<Vec<C
     Ok(columns)
 }
 
-pub fn table_exists(conn: &Connection, table_name: &str) -> AppResult<bool> {
-    let count: i32 = conn.query_row(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-        [table_name],
-        |row| row.get(0),
-    )?;
-    Ok(count > 0)
-}
-
 #[derive(Debug, Deserialize)]
 pub struct CreateColumnDef {
     pub name: String,

@@ -2,12 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   TableInfo,
   ColumnInfo,
+  ColumnValues,
   QueryParams,
   QueryResult,
   CreateColumnDef,
   RowData,
   QueryFilter,
-  CellValue,
 } from "@/types/database";
 
 // File commands
@@ -77,7 +77,7 @@ export async function getTableColumnValues(
   table: string,
   column: string,
   filters?: QueryFilter[]
-): Promise<CellValue[]> {
+): Promise<ColumnValues> {
   return invoke("get_table_column_values", { table, column, filters });
 }
 
@@ -115,4 +115,31 @@ export async function deleteTableRows(
 
 export async function clearTableData(table: string): Promise<number> {
   return invoke("clear_table_data", { table });
+}
+
+export type ExportFormat = "csv" | "json";
+
+export interface ExportOutcome {
+  rows_written: number;
+  path: string;
+}
+
+/**
+ * Streams the *entire* table to `path`, independent of the current page, so an
+ * export is never limited to the rows on screen.
+ */
+export async function exportTableData(
+  params: QueryParams,
+  format: ExportFormat,
+  path: string
+): Promise<ExportOutcome> {
+  return invoke("export_table_data", { params, format, path });
+}
+
+/** Writes text to a path the user picked in the native save dialog. */
+export async function writeTextFile(
+  path: string,
+  contents: string
+): Promise<void> {
+  return invoke("write_text_file", { path, contents });
 }

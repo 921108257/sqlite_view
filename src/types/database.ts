@@ -19,6 +19,8 @@ export interface QueryParams {
   order_by?: string;
   order_dir?: "ASC" | "DESC";
   filters?: QueryFilter[];
+  /** Case-insensitive substring match OR'd across every column. */
+  global_search?: string;
 }
 
 export interface QueryFilter {
@@ -31,6 +33,12 @@ export interface QueryResult {
   columns: string[];
   rows: unknown[][];
   total_count: number;
+}
+
+export interface ColumnValues {
+  values: CellValue[];
+  /** True when the table holds more distinct values than the backend returns. */
+  truncated: boolean;
 }
 
 export interface CreateColumnDef {

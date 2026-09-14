@@ -1,5 +1,5 @@
 mod commands;
-mod db;
+pub mod db;
 mod error;
 
 use db::create_db_manager;
@@ -33,6 +33,8 @@ pub fn run() {
             commands::delete_table_row,
             commands::delete_table_rows,
             commands::clear_table_data,
+            commands::export_table_data,
+            commands::write_text_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

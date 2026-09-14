@@ -5,12 +5,21 @@ use serde_json::{Map, Value as JsonValue};
 use crate::error::{AppError, AppResult};
 
 const MAX_UNLIMITED_QUERY_ROWS: i64 = 500;
+/// Upper bound on the distinct values offered by a column filter popover.
+const MAX_DISTINCT_VALUES: usize = 1000;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QueryResult {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<JsonValue>>,
     pub total_count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ColumnValues {
+    pub values: Vec<JsonValue>,
+    /// True when the table holds more distinct values than `MAX_DISTINCT_VALUES`.
+    pub truncated: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -21,6 +30,8 @@ pub struct QueryParams {
     pub order_by: Option<String>,
     pub order_dir: Option<String>,
     pub filters: Option<Vec<QueryFilter>>,
+    /// Case-insensitive substring matched against every column, OR'd together.
+    pub global_search: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,7 +41,7 @@ pub struct QueryFilter {
     pub values: Option<Vec<JsonValue>>,
 }
 
-fn sqlite_value_to_json(value: Value) -> JsonValue {
+pub fn sqlite_value_to_json(value: Value) -> JsonValue {
     match value {
         Value::Null => JsonValue::Null,
         Value::Integer(i) => JsonValue::Number(i.into()),
@@ -43,7 +54,12 @@ fn sqlite_value_to_json(value: Value) -> JsonValue {
 }
 
 pub fn query_table(conn: &Connection, params: &QueryParams) -> AppResult<QueryResult> {
-    let (where_sql, filter_values) = build_filter_clause(params.filters.as_deref());
+    let (where_sql, filter_values) = build_filter_clause(
+        conn,
+        params.filters.as_deref(),
+        params.global_search.as_deref(),
+        &params.table,
+    );
     let filter_params = sql_param_refs(&filter_values);
 
     let count_sql = format!(
@@ -103,19 +119,22 @@ pub fn get_column_values(
     table: &str,
     column: &str,
     filters: Option<&[QueryFilter]>,
-) -> AppResult<Vec<JsonValue>> {
-    let (where_sql, filter_values) = build_filter_clause(filters);
+) -> AppResult<ColumnValues> {
+    let (where_sql, filter_values) = build_filter_clause(conn, filters, None, table);
     let column_sql = quote_identifier(column);
-    let sql = format!(
-        "SELECT DISTINCT {} FROM {}{} ORDER BY CAST({} AS TEXT) COLLATE NOCASE LIMIT 1000",
+    let params = sql_param_refs(&filter_values);
+
+    // The cap keeps the checkbox list bounded on huge tables. `truncated` is
+    // reported so the UI can say so instead of silently hiding values.
+    let mut stmt = conn.prepare(&format!(
+        "SELECT DISTINCT {} FROM {}{} ORDER BY CAST({} AS TEXT) COLLATE NOCASE LIMIT {}",
         column_sql,
         quote_identifier(table),
         where_sql,
-        column_sql
-    );
+        column_sql,
+        MAX_DISTINCT_VALUES
+    ))?;
 
-    let params = sql_param_refs(&filter_values);
-    let mut stmt = conn.prepare(&sql)?;
     let values = stmt
         .query_map(params.as_slice(), |row| {
             let value: Value = row.get(0)?;
@@ -123,7 +142,16 @@ pub fn get_column_values(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(values)
+    let distinct_count: i64 = conn.query_row(
+        &format!("SELECT COUNT(DISTINCT {}) FROM {}{}", column_sql, quote_identifier(table), where_sql),
+        params.as_slice(),
+        |row| row.get(0),
+    )?;
+
+    Ok(ColumnValues {
+        values,
+        truncated: distinct_count > MAX_DISTINCT_VALUES as i64,
+    })
 }
 
 pub fn insert_row(conn: &Connection, table: &str, data: &Map<String, JsonValue>) -> AppResult<i64> {
@@ -224,15 +252,16 @@ pub fn delete_rows(
     Ok(conn.execute(&sql, params.as_slice())?)
 }
 
-fn build_filter_clause(filters: Option<&[QueryFilter]>) -> (String, Vec<Box<dyn ToSql>>) {
-    let Some(filters) = filters else {
-        return (String::new(), Vec::new());
-    };
-
+fn build_filter_clause(
+    conn: &Connection,
+    filters: Option<&[QueryFilter]>,
+    global_search: Option<&str>,
+    table: &str,
+) -> (String, Vec<Box<dyn ToSql>>) {
     let mut clauses = Vec::new();
     let mut values: Vec<Box<dyn ToSql>> = Vec::new();
 
-    for filter in filters {
+    for filter in filters.unwrap_or(&[]) {
         if let Some(search) = filter
             .search
             .as_deref()
@@ -260,11 +289,39 @@ fn build_filter_clause(filters: Option<&[QueryFilter]>) -> (String, Vec<Box<dyn 
         }
     }
 
+    // Global search: one LIKE per column, OR'd, so the filter is pushed into
+    // SQLite instead of being applied to an already-paginated page.
+    if let Some(term) = global_search.map(str::trim).filter(|s| !s.is_empty()) {
+        let columns = table_column_names(conn, table);
+        if !columns.is_empty() {
+            let any_column = columns
+                .iter()
+                .map(|column| format!("CAST({} AS TEXT) LIKE ?", quote_identifier(column)))
+                .collect::<Vec<_>>()
+                .join(" OR ");
+            clauses.push(format!("({})", any_column));
+            for _ in &columns {
+                values.push(Box::new(format!("%{}%", term)));
+            }
+        }
+    }
+
     if clauses.is_empty() {
         (String::new(), values)
     } else {
         (format!(" WHERE {}", clauses.join(" AND ")), values)
     }
+}
+
+/// Read the live column list so a global search never references a stale schema.
+fn table_column_names(conn: &Connection, table: &str) -> Vec<String> {
+    let quoted = quote_identifier(table);
+    let Ok(mut stmt) = conn.prepare(&format!("PRAGMA table_info({})", quoted)) else {
+        return Vec::new();
+    };
+    stmt.query_map([], |row| row.get::<_, String>(1))
+        .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
+        .unwrap_or_default()
 }
 
 fn sql_param_refs(values: &[Box<dyn ToSql>]) -> Vec<&dyn ToSql> {
@@ -326,6 +383,7 @@ mod tests {
                     search: Some("ac".to_string()),
                     values: Some(vec![json!("active"), json!("blocked")]),
                 }]),
+                global_search: None,
             },
         )
         .unwrap();
@@ -358,7 +416,7 @@ mod tests {
         )
         .unwrap();
 
-        let values = get_column_values(
+        let result = get_column_values(
             &conn,
             "items",
             "status",
@@ -370,7 +428,105 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(values, vec![json!("active"), json!("blocked")]);
+        assert_eq!(result.values, vec![json!("active"), json!("blocked")]);
+        assert!(!result.truncated);
+    }
+
+    #[test]
+    fn global_search_matches_any_column() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, note TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO items (name, note) VALUES ('alpha', 'first')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO items (name, note) VALUES ('beta', 'needle here')",
+            [],
+        )
+        .unwrap();
+
+        let result = query_table(
+            &conn,
+            &QueryParams {
+                table: "items".to_string(),
+                limit: None,
+                offset: None,
+                order_by: Some("id".to_string()),
+                order_dir: Some("ASC".to_string()),
+                filters: None,
+                global_search: Some("needle".to_string()),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.rows[0][1], json!("beta"));
+    }
+
+    #[test]
+    fn global_search_combines_with_column_filters() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, status TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO items (name, status) VALUES ('apple', 'active')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO items (name, status) VALUES ('apple', 'blocked')",
+            [],
+        )
+        .unwrap();
+
+        let result = query_table(
+            &conn,
+            &QueryParams {
+                table: "items".to_string(),
+                limit: None,
+                offset: None,
+                order_by: None,
+                order_dir: None,
+                filters: Some(vec![QueryFilter {
+                    column: "status".to_string(),
+                    search: None,
+                    values: Some(vec![json!("active")]),
+                }]),
+                global_search: Some("app".to_string()),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.rows[0][2], json!("active"));
+    }
+
+    #[test]
+    fn get_column_values_reports_truncation() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, label TEXT)", [])
+            .unwrap();
+        for i in 0..(MAX_DISTINCT_VALUES + 5) {
+            conn.execute(
+                "INSERT INTO items (label) VALUES (?)",
+                [format!("label-{}", i)],
+            )
+            .unwrap();
+        }
+
+        let result = get_column_values(&conn, "items", "label", None).unwrap();
+
+        assert_eq!(result.values.len(), MAX_DISTINCT_VALUES);
+        assert!(result.truncated);
     }
 
     #[test]
@@ -391,6 +547,7 @@ mod tests {
                 order_by: Some("id".to_string()),
                 order_dir: Some("ASC".to_string()),
                 filters: None,
+                global_search: None,
             },
         )
         .unwrap();

@@ -15,6 +15,9 @@ pub enum AppError {
     #[error("Invalid SQL: {0}")]
     InvalidSql(String),
 
+    #[error("Export failed: {0}")]
+    Export(String),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }

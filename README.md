@@ -4,12 +4,16 @@ A modern, cross-platform SQLite database viewer built with Tauri, React, and Typ
 
 ## Features
 
-- 🗂️ **Table Management**: Create, rename, and delete tables
+- 🗂️ **Table Management**: Create, rename, delete, and alter tables (add/drop columns)
 - 📊 **Data Viewing**: View data in table or JSON format
-- ✏️ **Inline Editing**: Double-click cells to edit values
-- ➕ **Data Operations**: Add and delete rows
-- 🔄 **Sorting & Pagination**: Sort by columns, navigate through pages
+- ✏️ **Inline Editing**: Press Enter (or double-click) on a cell to edit it in place
+- ➕ **Data Operations**: Add, edit, and delete rows (single or multi-select)
+- 🔍 **Filtering & Search**: Per-column filters plus a search across every column
+- 🧭 **Sorting & Pagination**: Sort by columns, page through data or load every row
+- 📤 **Export**: Write the whole table to CSV or JSON; copy a row as a SQL `INSERT`
 - 📁 **Drag & Drop**: Drop SQLite files directly onto the app
+- ⌨️ **Keyboard Support**: Arrow keys move between cells, Enter edits, Escape cancels
+- 🌐 **Internationalization**: 7 UI languages with locale-aware number formatting
 - 🎨 **Modern UI**: Clean, responsive interface with dark mode support
 
 ## Installation
