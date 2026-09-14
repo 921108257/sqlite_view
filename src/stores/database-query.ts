@@ -9,6 +9,7 @@ export function buildTableQueryParams({
   orderBy,
   orderDir,
   filters,
+  globalSearch,
   allRowsOffset = 0,
 }: {
   table: string;
@@ -17,9 +18,11 @@ export function buildTableQueryParams({
   orderBy: string | null;
   orderDir: "ASC" | "DESC";
   filters: QueryFilter[];
+  globalSearch?: string;
   allRowsOffset?: number;
 }): QueryParams {
   const paged = pageSize !== "all";
+  const trimmedSearch = globalSearch?.trim();
 
   return {
     table,
@@ -28,5 +31,6 @@ export function buildTableQueryParams({
     order_by: orderBy ?? undefined,
     order_dir: orderBy ? orderDir : undefined,
     filters: filters.length ? filters : undefined,
+    global_search: trimmedSearch ? trimmedSearch : undefined,
   };
 }

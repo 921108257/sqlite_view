@@ -55,4 +55,34 @@ describe("database query params", () => {
       order_dir: "DESC",
     });
   });
+
+  it("omits the search term when it is blank or whitespace", () => {
+    for (const globalSearch of ["", "   ", undefined]) {
+      expect(
+        buildTableQueryParams({
+          table: "items",
+          currentPage: 0,
+          pageSize: 50,
+          orderBy: null,
+          orderDir: "ASC",
+          filters: [],
+          globalSearch,
+        }).global_search
+      ).toBeUndefined();
+    }
+  });
+
+  it("trims and forwards a real search term", () => {
+    expect(
+      buildTableQueryParams({
+        table: "items",
+        currentPage: 0,
+        pageSize: 50,
+        orderBy: null,
+        orderDir: "ASC",
+        filters: [],
+        globalSearch: "  needle  ",
+      }).global_search
+    ).toBe("needle");
+  });
 });

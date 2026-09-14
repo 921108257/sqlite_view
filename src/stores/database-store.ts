@@ -26,6 +26,7 @@ interface DatabaseState {
   orderBy: string | null;
   orderDir: "ASC" | "DESC";
   filters: QueryFilter[];
+  globalSearch: string;
 
   // Loading states
   isLoading: boolean;
@@ -35,9 +36,11 @@ interface DatabaseState {
   // Actions
   openDatabase: (path: string) => Promise<void>;
   closeDatabase: () => Promise<void>;
+  restoreSession: () => Promise<boolean>;
   refreshTables: () => Promise<void>;
   selectTable: (tableName: string | null) => Promise<void>;
   refreshData: () => Promise<void>;
+  refreshColumns: () => Promise<void>;
   loadMoreData: () => Promise<void>;
   setPage: (page: number) => void;
   setPageSize: (size: PageSize) => void;
@@ -45,6 +48,7 @@ interface DatabaseState {
   setColumnFilter: (filter: QueryFilter) => void;
   clearColumnFilter: (column: string) => void;
   clearFilters: () => void;
+  setGlobalSearch: (term: string) => void;
   clearError: () => void;
 }
 
@@ -61,6 +65,7 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
   orderBy: null,
   orderDir: "ASC",
   filters: [],
+  globalSearch: "",
   isLoading: false,
   isLoadingMore: false,
   error: null,
@@ -91,12 +96,40 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
         queryResult: null,
         currentPage: 0,
         filters: [],
+        globalSearch: "",
         isLoadingMore: false,
       });
     } catch (e) {
       set({ error: String(e) });
     } finally {
       set({ isLoading: false });
+    }
+  },
+
+  restoreSession: async () => {
+    try {
+      const connected = await commands.isDatabaseConnected();
+      if (!connected) return false;
+
+      const path = await commands.getDatabasePath();
+      set({
+        isConnected: true,
+        databasePath: path,
+        error: null,
+        tables: [],
+        selectedTable: null,
+        tableColumns: [],
+        queryResult: null,
+        currentPage: 0,
+        filters: [],
+        globalSearch: "",
+        isLoadingMore: false,
+      });
+      await get().refreshTables();
+      return true;
+    } catch (e) {
+      set({ error: String(e) });
+      return false;
     }
   },
 
@@ -122,6 +155,7 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
       orderBy: null,
       orderDir: "ASC",
       filters: [],
+      globalSearch: "",
       isLoadingMore: false,
     });
 
@@ -140,7 +174,15 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
   },
 
   refreshData: async () => {
-    const { selectedTable, currentPage, pageSize, orderBy, orderDir, filters } = get();
+    const {
+      selectedTable,
+      currentPage,
+      pageSize,
+      orderBy,
+      orderDir,
+      filters,
+      globalSearch,
+    } = get();
     if (!selectedTable) return;
 
     set({ isLoading: true, error: null });
@@ -152,6 +194,7 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
         orderBy,
         orderDir,
         filters,
+        globalSearch,
       }));
       set({ queryResult: result });
     } catch (e) {
@@ -161,6 +204,23 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
     }
   },
 
+  // Schema changed (column added/dropped): reload both the column metadata and
+  // the visible rows so the grid and the edit dialog agree.
+  refreshColumns: async () => {
+    const { selectedTable } = get();
+    if (!selectedTable) return;
+
+    set({ error: null });
+    try {
+      const columns = await commands.getColumns(selectedTable);
+      set({ tableColumns: columns });
+    } catch (e) {
+      set({ error: String(e) });
+      return;
+    }
+    await get().refreshData();
+  },
+
   loadMoreData: async () => {
     const {
       selectedTable,
@@ -168,6 +228,7 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
       orderBy,
       orderDir,
       filters,
+      globalSearch,
       queryResult,
       isLoading,
       isLoadingMore,
@@ -193,6 +254,7 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
         orderBy,
         orderDir,
         filters,
+        globalSearch,
         allRowsOffset: queryResult.rows.length,
       }));
 
@@ -255,7 +317,12 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => ({
   },
 
   clearFilters: () => {
-    set({ filters: [], currentPage: 0 });
+    set({ filters: [], globalSearch: "", currentPage: 0 });
+    get().refreshData();
+  },
+
+  setGlobalSearch: (term: string) => {
+    set({ globalSearch: term, currentPage: 0 });
     get().refreshData();
   },
 
