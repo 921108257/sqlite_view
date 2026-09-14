@@ -12,10 +12,17 @@ export function MainContent({ children }: MainContentProps) {
 
   if (!isConnected) {
     return (
-      <main className="flex-1 flex items-center justify-center bg-muted/10">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="flex-1 flex items-center justify-center bg-muted/10"
+      >
         <div className="text-center">
-          <Database className="h-16 w-16 text-muted-foreground/50 mx-auto mb-4" />
-          <h2 className="text-xl font-medium text-muted-foreground">
+          <Database
+            aria-hidden="true"
+            className="h-16 w-16 text-muted-foreground/50 mx-auto mb-4"
+          />
+          <h2 className="text-xl font-medium text-muted-foreground text-balance">
             {t("main.noDatabaseOpen")}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
@@ -28,9 +35,13 @@ export function MainContent({ children }: MainContentProps) {
 
   if (!selectedTable) {
     return (
-      <main className="flex-1 flex items-center justify-center bg-muted/10">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="flex-1 flex items-center justify-center bg-muted/10"
+      >
         <div className="text-center">
-          <h2 className="text-xl font-medium text-muted-foreground">
+          <h2 className="text-xl font-medium text-muted-foreground text-balance">
             {t("main.selectTable")}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
@@ -41,5 +52,13 @@ export function MainContent({ children }: MainContentProps) {
     );
   }
 
-  return <main className="flex-1 overflow-hidden flex flex-col">{children}</main>;
+  return (
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="flex-1 overflow-hidden flex flex-col focus-visible:outline-none"
+    >
+      {children}
+    </main>
+  );
 }

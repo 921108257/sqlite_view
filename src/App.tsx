@@ -2,9 +2,12 @@ import { useEffect, useState } from "react";
 import { Header } from "@/components/layout/header";
 import { Sidebar } from "@/components/layout/sidebar";
 import { MainContent } from "@/components/layout/main-content";
+import { ErrorBanner } from "@/components/layout/error-banner";
 import { DataTable } from "@/components/data-view/data-table";
 import { JsonView } from "@/components/data-view/json-view";
 import { ViewToggle } from "@/components/data-view/view-toggle";
+import { DataToolbar } from "@/components/data-view/data-toolbar";
+import { ColumnManager } from "@/components/data-view/column-manager";
 import { DropZone } from "@/components/drop-zone";
 import { CreateTableDialog } from "@/components/dialogs/create-table-dialog";
 import { DeleteConfirmDialog } from "@/components/dialogs/delete-confirm-dialog";
@@ -18,12 +21,12 @@ import { deleteTable, renameExistingTable } from "@/tauri/commands";
 import { useToast } from "@/hooks/use-toast";
 import { useCliArgs } from "@/hooks/use-cli-args";
 import { useI18n } from "@/lib/i18n";
-import { applyThemeClass, useSettingsStore } from "@/stores/settings-store";
+import { applyThemeClass, applyLanguageAttribute, useSettingsStore } from "@/stores/settings-store";
 
 function App() {
   useCliArgs();
 
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
   const themePreference = useSettingsStore((state) => state.themePreference);
   const refreshResolvedSettings = useSettingsStore(
@@ -39,13 +42,36 @@ function App() {
   const [tableToDelete, setTableToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const { selectedTable, pageSize, refreshTables, refreshData, selectTable } =
+  const { selectedTable, pageSize, refreshTables, refreshData, selectTable, restoreSession } =
     useDatabaseStore();
   const { toast } = useToast();
 
   useEffect(() => {
     applyThemeClass(resolvedTheme);
   }, [resolvedTheme]);
+
+  useEffect(() => {
+    applyLanguageAttribute(language);
+  }, [language]);
+
+  // The Rust side keeps the connection alive across a WebView reload, so
+  // rebuild the frontend state from it instead of showing "no database".
+  useEffect(() => {
+    let active = true;
+    restoreSession().then((restored) => {
+      if (active && restored) {
+        toast({
+          title: t("common.success"),
+          description: t("app.restoredSession"),
+        });
+      }
+    });
+    return () => {
+      active = false;
+    };
+    // Runs once on mount; the store actions and `t` are stable enough here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (pageSize === "all" && viewMode === "json") {
@@ -142,6 +168,12 @@ function App() {
   return (
     <DropZone>
       <div className="h-screen flex flex-col">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-[200] focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          {t("app.skipToContent")}
+        </a>
         <Header />
         <div className="flex-1 flex overflow-hidden">
           <Sidebar
@@ -150,35 +182,34 @@ function App() {
             onDeleteTable={handleDeleteTable}
           />
           <MainContent>
-            <div className="border-b p-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <h2 className="font-medium">{selectedTable}</h2>
+            <ErrorBanner />
+            <div className="border-b p-2 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <h2 className="truncate font-medium text-balance" translate="no">
+                  {selectedTable}
+                </h2>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-8 w-8 shrink-0"
                   onClick={refreshData}
+                  aria-label={t("data.refreshData")}
                 >
-                  <RefreshCw className="h-4 w-4" />
+                  <RefreshCw aria-hidden="true" className="h-4 w-4" />
                 </Button>
               </div>
-              <div className="flex items-center gap-2">
+              <DataToolbar />
+              <div className="flex shrink-0 items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setAddRowOpen(true)}
                 >
-                  <Plus className="h-4 w-4 mr-1" />
+                  <Plus aria-hidden="true" className="h-4 w-4 mr-1" />
                   {t("app.addRow")}
                 </Button>
-                <ViewToggle
-                  value={viewMode}
-                  onChange={(value) => {
-                    if (value === "json" && pageSize === "all") return;
-                    setViewMode(value);
-                  }}
-                  disableJson={pageSize === "all"}
-                />
+                <ColumnManager />
+                <ViewToggle value={viewMode} onChange={setViewMode} />
               </div>
             </div>
             {viewMode === "table" ? <DataTable /> : <JsonView />}
